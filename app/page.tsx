@@ -264,8 +264,10 @@ export default function SweetieWorldApp() {
   // NEW: Dashboard Modal States
   const [showInactiveUsersModal, setShowInactiveUsersModal] = useState(false);
   const [showPointsSpentModal, setShowPointsSpentModal] = useState(false);
+  const [showUserPointsModal, setShowUserPointsModal] = useState(false);
   const [inactiveUserSearch, setInactiveUserSearch] = useState('');
   const [pointsSpentSearch, setPointsSpentSearch] = useState('');
+  const [userPointsSearch, setUserPointsSearch] = useState('');
   const [selectedMethodForDetail, setSelectedMethodForDetail] = useState<string | null>(null);
   // NEW: Promotion Popup State
   const [showWelcomePromo, setShowWelcomePromo] = useState(false);
@@ -338,6 +340,8 @@ export default function SweetieWorldApp() {
   const [pointsSpentPerPage, setPointsSpentPerPage] = useState(10);
   const [methodDetailPage, setMethodDetailPage] = useState(1);
   const [methodDetailPerPage, setMethodDetailPerPage] = useState(10);
+  const [userPointsPage, setUserPointsPage] = useState(1);
+  const [userPointsPerPage, setUserPointsPerPage] = useState(10);
   
   const [bulkDeleteDateFrom, setBulkDeleteDateFrom] = useState('');
   const [bulkDeleteDateTo, setBulkDeleteDateTo] = useState('');
@@ -618,6 +622,39 @@ export default function SweetieWorldApp() {
     link.click();
     document.body.removeChild(link);
     showToast("User Backup Downloaded Successfully!");
+  };
+
+  // NEW: Shows (Movies/Series) Backup ဒေါင်းလုဒ်လုပ်မည့် Function
+  const handleDownloadShowsBackup = () => {
+    if (shows.length === 0) return showToast("No shows to backup.");
+    const headers = ["ID", "Title (EN)", "Title (MM)", "Category", "Total Episodes", "Points Per Ep", "VIP Telegram Link", "Episodes Info"];
+    const csvContent = [
+       headers.join(","),
+       ...shows.map(s => {
+          // အပိုင်းတစ်ခုချင်းစီရဲ့ Link အရေအတွက်ကိုပါ မှတ်သားထားမည်
+          const epsInfo = s.episodes.map(ep => `${ep.epLabel} (Links: ${ep.links?.length || 0})`).join(" | ");
+          return [
+            `"${s.id}"`,
+            `"${s.title_en || ''}"`,
+            `"${s.title_mm || ''}"`,
+            `"${s.category || ''}"`,
+            `"${s.totalEpisodes}"`,
+            `"${s.pointsPerEp}"`,
+            `"${s.vipTelegramLink || ''}"`,
+            `"${epsInfo}"`
+          ].join(",");
+       })
+    ].join("\n");
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Movies_Backup_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("Movies Backup Downloaded Successfully!");
   };
 
   const handleAuthSubmit = (e: React.FormEvent) => {
@@ -1346,8 +1383,8 @@ export default function SweetieWorldApp() {
                               <p className="text-xs text-red-500/70 font-bold mb-1 group-hover:text-red-400 transition">Inactive Users</p>
                               <p className="text-2xl font-black text-red-400">{inactiveUsers}</p>
                            </div>
-                           <div className="bg-gradient-to-br from-[#3e1717] to-black p-4 rounded-xl border border-[#fcd385]/30 shadow-lg">
-                              <p className="text-xs text-[#fcd385]/70 font-bold mb-1">Total Points (Remaining)</p>
+                           <div onClick={() => setShowUserPointsModal(true)} className="bg-gradient-to-br from-[#3e1717] to-black p-4 rounded-xl border border-[#fcd385]/30 shadow-lg cursor-pointer hover:border-[#fcd385] transition group">
+                              <p className="text-xs text-[#fcd385]/70 font-bold mb-1 group-hover:text-[#fcd385] transition">Total Points (Remaining) <span className="text-[9px] text-zinc-500 ml-1">(View Detail)</span></p>
                               <p className="text-2xl font-black text-[#fcd385]">{totalPoints.toLocaleString()} <span className="text-xs">PTS</span></p>
                            </div>
                            {/* NEW: Total Points Spent Card */}
@@ -2381,9 +2418,15 @@ export default function SweetieWorldApp() {
             {/* --- NEW SEPARATED TAB: UPLOADED CONTENT --- */}
             {adminActiveTab === 'uploaded_content' && (
               <div className="animate-fade-in space-y-6 font-sans">
-                <h3 className="text-xl font-bold text-white border-l-4 border-[#fcd385] pl-3">{lang === 'en' ? 'Uploaded Content' : 'တင်ထားသော ဇာတ်ကားများ'}</h3>
+                <div className="flex justify-between items-center">
+                   <h3 className="text-xl font-bold text-white border-l-4 border-[#fcd385] pl-3">{lang === 'en' ? 'Uploaded Content' : 'တင်ထားသော ဇာတ်ကားများ'}</h3>
+                   <button onClick={handleDownloadShowsBackup} className="flex items-center gap-1.5 text-xs bg-blue-900/40 border border-blue-700/50 hover:border-blue-400 text-blue-400 px-3 py-2 rounded-lg transition shadow-lg">
+                       <Download className="w-4 h-4" /> Backup Movies (Excel)
+                   </button>
+                </div>
                 
                 <div className="bg-[#1f1f1f] p-5 rounded-2xl border border-zinc-800 shadow-xl">
+
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
                     <div className="relative w-full sm:w-64">
                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -3324,6 +3367,61 @@ export default function SweetieWorldApp() {
           </div>
         </div>
       )}
+
+	{/* --- NEW: USERS POINT BALANCES MODAL --- */}
+      {showUserPointsModal && (() => {
+         const userPointsLogs = users.filter(u => u.username.toLowerCase().includes((userPointsSearch || '').toLowerCase())).sort((a, b) => (b.points || 0) - (a.points || 0));
+         const paginatedUserPoints = userPointsLogs.slice((userPointsPage - 1) * userPointsPerPage, userPointsPage * userPointsPerPage);
+         return (
+           <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-sans animate-fade-in">
+             <div className="bg-gradient-to-b from-[#2b0303] to-[#161616] border border-[#fcd385]/30 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.9)] relative overflow-hidden">
+                <div className="p-5 border-b border-[#fcd385]/20 flex justify-between items-center bg-black/40">
+                  <h2 className="text-xl font-black text-[#fcd385] flex items-center gap-2"><Coins className="w-5 h-5"/> Users Point Balances</h2>
+                  <button onClick={() => {setShowUserPointsModal(false); setUserPointsSearch('');}} className="text-zinc-400 hover:text-white transition"><X className="w-6 h-6"/></button>
+                </div>
+                
+                <div className="p-4 border-b border-zinc-800 bg-black/20">
+                  <div className="relative w-full max-w-md">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                    <input type="text" placeholder="Search by Username..." value={userPointsSearch} onChange={e => {setUserPointsSearch(e.target.value); setUserPointsPage(1);}} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" />
+                  </div>
+                </div>
+
+                <div className="p-5 overflow-y-auto custom-scrollbar flex-1 flex flex-col">
+                   <div className="overflow-x-auto bg-black/20 rounded-xl border border-zinc-800 shadow-inner">
+                      <table className="w-full text-left text-sm text-zinc-300 min-w-[600px]">
+                        <thead className="text-[10px] uppercase bg-black/60 text-zinc-400 border-b border-zinc-800">
+                           <tr>
+                              <th className="px-4 py-3">Username</th>
+                              <th className="px-4 py-3">Email</th>
+                              <th className="px-4 py-3 text-right">Points Balance</th>
+                           </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedUserPoints.length === 0 ? (
+                             <tr><td colSpan={3} className="text-center py-8 text-zinc-500 text-sm">No users found.</td></tr>
+                          ) : paginatedUserPoints.map((u, idx) => (
+                            <tr key={idx} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
+                              <td className="px-4 py-3 font-bold text-blue-400 cursor-pointer hover:underline" onClick={() => {
+                                  setShowUserPointsModal(false);
+                                  setUserPointsSearch('');
+                                  setUserDetailModal(u);
+                              }}>{u.username}</td>
+                              <td className="px-4 py-3 text-xs text-zinc-400">{u.email}</td>
+                              <td className="px-4 py-3 text-right font-bold text-[#fcd385]">{u.points} PTS</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                   </div>
+                   <div className="mt-4">
+                      {userPointsLogs.length > 0 && renderPagination(userPointsPage, setUserPointsPage, userPointsPerPage, setUserPointsPerPage, userPointsLogs.length)}
+                   </div>
+                </div>
+             </div>
+           </div>
+         );
+      })()}
 
       {/* --- NEW: INACTIVE USERS MODAL --- */}
       {showInactiveUsersModal && (
