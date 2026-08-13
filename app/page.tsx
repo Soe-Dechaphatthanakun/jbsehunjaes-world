@@ -350,6 +350,7 @@ export default function SweetieWorldApp() {
   const [adminLogBulkDateTo, setAdminLogBulkDateTo] = useState('');
 
   const notiRef = useRef<HTMLDivElement>(null);
+  const isSyncing = useRef(false); // NEW: Sync လုပ်နေစဉ် Auto-Save ခဏပိတ်ရန်
 
   // ==========================================
   // 2. HELPER FUNCTIONS
@@ -481,6 +482,7 @@ export default function SweetieWorldApp() {
   }, [isInitialLoad]); // users ကို dependency ကနေ ဖြုတ်ထားပါတယ် (ခဏခဏ Box မပေါ်စေဖို့ပါ)
 
   const syncLatestData = async () => {
+    isSyncing.current = true; // NEW: Auto-save များကို ခဏပိတ်ထားမည်
     try {
       const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
       if (pSnap.exists() && pSnap.data().data) {
@@ -506,6 +508,8 @@ export default function SweetieWorldApp() {
       }
     } catch(e) {
       console.error("Sync error:", e);
+    } finally {
+      setTimeout(() => { isSyncing.current = false; }, 1000); // NEW: စက္ကန့်ဝက်အကြာမှ Auto-save ပြန်ဖွင့်မည်
     }
   };
 
@@ -515,17 +519,17 @@ export default function SweetieWorldApp() {
     return () => clearInterval(interval);
   }, [isInitialLoad]);
 
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "shows"), { data: shows }); }, [shows, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "categories"), { data: categories }); }, [categories, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "platforms"), { data: platforms }); }, [platforms, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "promotions"), { data: promotions }); }, [promotions, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "faqs"), { data: faqs }); }, [faqs, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "pointRequests"), { data: pointRequests }); }, [pointRequests, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "notifications"), { data: notifications }); }, [notifications, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }); }, [adminLogs, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }); }, [paymentProviders, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched) setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }); }, [siteConfig, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "shows"), { data: shows }); }, [shows, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "categories"), { data: categories }); }, [categories, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "platforms"), { data: platforms }); }, [platforms, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "promotions"), { data: promotions }); }, [promotions, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "faqs"), { data: faqs }); }, [faqs, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "pointRequests"), { data: pointRequests }); }, [pointRequests, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "notifications"), { data: notifications }); }, [notifications, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }); }, [adminLogs, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }); }, [paymentProviders, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }); }, [siteConfig, isInitialLoad, isDataFetched]);
 
   // NEW: Direct Link ဖြင့် ဝင်လာပါက ဇာတ်ကားကို အလိုလို ဖွင့်ပေးမည်
   useEffect(() => {
@@ -657,11 +661,19 @@ export default function SweetieWorldApp() {
     showToast("Movies Backup Downloaded Successfully!");
   };
 
-  const handleAuthSubmit = (e: React.FormEvent) => {
+	const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+
+    // --- NEW: Database မှ နောက်ဆုံး Users စာရင်းကို အရင်ဆွဲယူမည် (အကောင့်ပျောက်ခြင်းမှ ကာကွယ်ရန်) ---
+    const uSnap = await getDoc(doc(db, "SiteData", "users"));
+    let latestUsers = users;
+    if (uSnap.exists() && uSnap.data().data) {
+       latestUsers = uSnap.data().data;
+    }
+
     if (authMode === 'register') {
-      const exists = users.find(u => u.username.toLowerCase() === authForm.username.trim().toLowerCase() || u.email.toLowerCase() === authForm.email.trim().toLowerCase());
+      const exists = latestUsers.find(u => u.username.toLowerCase() === authForm.username.trim().toLowerCase() || u.email.toLowerCase() === authForm.email.trim().toLowerCase());
       if (exists) return setAuthError(t.msgExists);
       const newUser: UserData = { 
         ...authForm, role: 'user', points: 0, vip: false, unlockedShows: [],
@@ -683,7 +695,10 @@ export default function SweetieWorldApp() {
       setNotifications([newNoti, ...notifications]);
       // -----------------------------------------------------------
 
-      setUsers([newUser, ...users]); // အကောင့်သစ်ကို အောက်ဆုံးမပို့ဘဲ အပေါ်ဆုံးရောက်အောင် ပြင်လိုက်ပါသည်
+      const updatedUsersList = [newUser, ...latestUsers];
+      setUsers(updatedUsersList); // အကောင့်သစ်ကို အပေါ်ဆုံးရောက်အောင် ပြင်ပါသည်
+      await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
+
       setCurrentUser(newUser);
       if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
       else localStorage.removeItem('jbsehunjaes_auth');
@@ -691,32 +706,34 @@ export default function SweetieWorldApp() {
       setAuthModalOpen(false);
       setAuthForm({ username: '', email: '', password: '' });
       setShowAuthPassword(false);
-      // NEW: Register ပြီးတာနဲ့ Promo Popup ပြမည်
       setShowWelcomePromo(true);
+      
     } else if (authMode === 'login') {
       const inputUsernameOrEmail = authForm.username.trim().toLowerCase();
-      const user = users.find(u => 
+      const user = latestUsers.find(u => 
         (u.username.toLowerCase() === inputUsernameOrEmail || u.email.toLowerCase() === inputUsernameOrEmail) && 
         u.password === authForm.password
       );
       if (user) {
         const updatedUser = { ...user, lastLoginAt: new Date().toISOString() };
-        setUsers(users.map(u => u.username === updatedUser.username ? updatedUser : u));
+        const updatedUsersList = latestUsers.map(u => u.username === updatedUser.username ? updatedUser : u);
+        setUsers(updatedUsersList);
+        await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
+
         setCurrentUser(updatedUser);
-        
         if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
         else localStorage.removeItem('jbsehunjaes_auth');
         showToast(t.msgLoginSucc);
         setAuthModalOpen(false);
         setAuthForm({ username: '', email: '', password: '' });
         setShowAuthPassword(false);
-        // NEW: Login ဝင်ပြီးတာနဲ့ Promo Popup ပြမည်
         setShowWelcomePromo(true);
       } else {
         setAuthError(t.msgWrong);
       }
+      
     } else if (authMode === 'forgot') {
-      const user = users.find(u => u.username.toLowerCase() === authForm.username.trim().toLowerCase() && u.email.toLowerCase() === authForm.email.trim().toLowerCase());
+      const user = latestUsers.find(u => u.username.toLowerCase() === authForm.username.trim().toLowerCase() && u.email.toLowerCase() === authForm.email.trim().toLowerCase());
       if (user) {
          setAlertModal({ message: `Password: ${user.password}` });
          setAuthMode('login');
