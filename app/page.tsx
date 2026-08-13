@@ -635,8 +635,14 @@ export default function SweetieWorldApp() {
     const csvContent = [
        headers.join(","),
        ...shows.map(s => {
-          // အပိုင်းတစ်ခုချင်းစီရဲ့ Link အရေအတွက်ကိုပါ မှတ်သားထားမည်
-          const epsInfo = s.episodes.map(ep => `${ep.epLabel} (Links: ${ep.links?.length || 0})`).join(" | ");
+          // အပိုင်းတစ်ခုချင်းစီရဲ့ Link အစစ် (URL) တွေကိုပါ ထည့်သွင်းမည်
+          const epsInfo = s.episodes.map(ep => {
+              const linksStr = ep.links && ep.links.length > 0 
+                  ? ep.links.map(l => `${l.platform}: ${l.url}`).join(" , ") 
+                  : "No Link";
+              return `${ep.epLabel} [${linksStr}]`;
+          }).join(" | ");
+          
           return [
             `"${s.id}"`,
             `"${s.title_en || ''}"`,
