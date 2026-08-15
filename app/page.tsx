@@ -852,13 +852,18 @@ export default function SweetieWorldApp() {
   };
 
   const handleNotiClick = (n: NotificationData) => {
-     setNotifications(notifications.map(x => x.id === n.id ? {...x, isRead: true} : x));
+     // ၁။ Local မှာ "ဖတ်ပြီး" လို့ အရင်ပြောင်းမည်
+     const updatedNotis = notifications.map(x => x.id === n.id ? {...x, isRead: true} : x);
+     setNotifications(updatedNotis);
+     
+     // ၂။ Race Condition ကိုကျော်ဖြတ်ရန် Firebase ဆီသို့ "ဖတ်ပြီးကြောင်း" တိုက်ရိုက်လှမ်းသိမ်းမည်
+     setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
+
      setNotiDropdownOpen(false);
      if(n.actionType === 'point_request') { setAdminDashboardOpen(true); setAdminActiveTab('points'); } 
-     else if (n.actionType === 'point_approve' || n.actionType === 'point_reject') { syncLatestData(); setPayStep('history'); setPointModalOpen(true); } 
-     else if (n.actionType === 'admin_edit') { syncLatestData(); setUserMenuTab('messages'); setUserMenuOpen(true); }
+     else if (n.actionType === 'point_approve' || n.actionType === 'point_reject') { setPayStep('history'); setPointModalOpen(true); } 
+     else if (n.actionType === 'admin_edit') { setUserMenuTab('messages'); setUserMenuOpen(true); }
      else if (n.actionType === 'new_user') {
-      syncLatestData();
       setAdminDashboardOpen(true);
       setAdminActiveTab('users');
       const username = n.message.replace('New User Registered: ', '');
@@ -867,7 +872,6 @@ export default function SweetieWorldApp() {
    }
    // NEW: ဇာတ်ကားသစ် သို့မဟုတ် အပိုင်းသစ် Noti ကိုနှိပ်လျှင် ဇာတ်ကားဆီ တိုက်ရိုက်သွားမည်
    else if (n.actionType === 'new_upload' || n.actionType === 'ep_update') {
-      syncLatestData();
       // Noti စာသားထဲမှ " " ကြားရှိ ဇာတ်ကားနာမည်ကို ဆွဲထုတ်မည်
       const match = n.message.match(/"([^"]+)"/);
       if (match) {
@@ -1151,7 +1155,7 @@ export default function SweetieWorldApp() {
               
               {/* NOTIFICATION BELL */}
               <div className="relative shrink-0" ref={notiRef}>
-                 <button onClick={() => {syncLatestData(); setNotiDropdownOpen(!notiDropdownOpen);}} className="p-2 bg-[#1f1f1f] rounded-full border border-zinc-700 hover:border-[#fcd385]/50 transition relative flex items-center justify-center">
+                 <button onClick={() => {setNotiDropdownOpen(!notiDropdownOpen);}} className="p-2 bg-[#1f1f1f] rounded-full border border-zinc-700 hover:border-[#fcd385]/50 transition relative flex items-center justify-center">
                     <Bell className={`w-5 h-5 ${unreadNotiCount > 0 ? 'text-[#fcd385]' : 'text-zinc-400'}`} />
                     {unreadNotiCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-[#161616] animate-pulse">{unreadNotiCount}</span>}
                  </button>
