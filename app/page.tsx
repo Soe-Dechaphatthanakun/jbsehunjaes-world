@@ -2080,14 +2080,37 @@ export default function SweetieWorldApp() {
                          <button onClick={() => {if(newCategory && !categories.includes(newCategory)){ setCategories([...categories, newCategory]); setNewCategory(''); showToast('Category Added');}}} className="bg-[#fcd385] px-5 rounded-lg text-black text-sm font-bold">{t.addBtn}</button>
                       </div>
                       <div className="space-y-2">
-                        {categories.map(c => (
+                        {categories.map((c, idx) => (
                           <div key={c} className="flex justify-between items-center bg-black p-3 rounded-lg border border-zinc-800">
                              <span className="text-sm text-white font-bold">{c}</span>
                              {c !== 'All' && (
-                               <button onClick={() => setConfirmModal({
-                                  message: t.confirmDelDesc,
-                                  onConfirm: () => setCategories(categories.filter(cat => cat !== c))
-                               })} className="p-1.5 bg-red-900/30 rounded text-red-400 hover:bg-red-900 transition"><Trash2 className="w-4 h-4"/></button>
+                               <div className="flex items-center gap-1.5">
+                                 {/* အပေါ်ရွှေ့ရန် ခလုတ် (▲) */}
+                                 {idx > 1 && (
+                                   <button onClick={() => {
+                                     const newCats = [...categories];
+                                     const temp = newCats[idx - 1];
+                                     newCats[idx - 1] = newCats[idx];
+                                     newCats[idx] = temp;
+                                     setCategories(newCats);
+                                   }} className="p-1.5 bg-blue-900/30 rounded text-blue-400 hover:bg-blue-900 transition text-xs font-black shadow-inner" title="Move Up">▲</button>
+                                 )}
+                                 {/* အောက်ရွှေ့ရန် ခလုတ် (▼) */}
+                                 {idx < categories.length - 1 && (
+                                   <button onClick={() => {
+                                     const newCats = [...categories];
+                                     const temp = newCats[idx + 1];
+                                     newCats[idx + 1] = newCats[idx];
+                                     newCats[idx] = temp;
+                                     setCategories(newCats);
+                                   }} className="p-1.5 bg-blue-900/30 rounded text-blue-400 hover:bg-blue-900 transition text-xs font-black shadow-inner" title="Move Down">▼</button>
+                                 )}
+                                 {/* ဖျက်ရန် ခလုတ် */}
+                                 <button onClick={() => setConfirmModal({
+                                    message: t.confirmDelDesc,
+                                    onConfirm: () => setCategories(categories.filter(cat => cat !== c))
+                                 })} className="p-1.5 bg-red-900/30 rounded text-red-400 hover:bg-red-900 transition ml-2"><Trash2 className="w-4 h-4"/></button>
+                               </div>
                              )}
                           </div>
                         ))}
@@ -2345,19 +2368,50 @@ export default function SweetieWorldApp() {
                             }} className="bg-[#3e1717] text-[#fcd385] text-xs font-bold px-2 py-2.5 rounded w-24 text-center outline-none border border-zinc-800 focus:border-[#fcd385]" />
                             
                             <span className="text-zinc-600 text-xs">Schedule:</span>
-                            <div className="flex-1 min-w-[150px] relative">
-                              <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                              <input 
-                                type="datetime-local" 
-                                value={ep.releaseDateRaw || ''} 
-                                onChange={e => {
-                                  const eps = [...newVideo.episodes!]; 
-                                  eps[idx].releaseDateRaw = e.target.value; 
-                                  eps[idx].releaseDate = formatDateTime(e.target.value); 
-                                  setNewVideo({...newVideo, episodes: eps});
-                                }} 
-                                className="bg-zinc-900 pl-9 pr-3 py-2.5 rounded text-xs text-white border border-zinc-800 w-full outline-none focus:border-[#fcd385] custom-datetime" 
-                              />
+                            <div className="flex-1 flex gap-2 min-w-[200px]">
+                              {/* Date Picker (Calendar နဲ့ ရွေးရန်) */}
+                              <div className="relative flex-1">
+                                <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input 
+                                  type="date" 
+                                  value={(ep.releaseDateRaw || '').includes('|||') ? ep.releaseDateRaw!.split('|||')[0] : (ep.releaseDateRaw || '').split('T')[0]} 
+                                  onChange={e => {
+                                    const eps = [...newVideo.episodes!]; 
+                                    const newDate = e.target.value;
+                                    const oldRaw = eps[idx].releaseDateRaw || '';
+                                    const currentTime = oldRaw.includes('|||') ? oldRaw.split('|||')[1] : '';
+                                    eps[idx].releaseDateRaw = `${newDate}|||${currentTime}`;
+                                    
+                                    const d = new Date(newDate);
+                                    const fd = !isNaN(d.getTime()) ? `${d.getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()}` : newDate;
+                                    eps[idx].releaseDate = currentTime ? `${fd} ${currentTime}` : fd;
+                                    setNewVideo({...newVideo, episodes: eps});
+                                  }} 
+                                  className="bg-zinc-900 pl-9 pr-2 py-2.5 rounded text-xs text-white border border-zinc-800 w-full outline-none focus:border-[#fcd385]" 
+                                />
+                              </div>
+                              {/* Time Input (အချိန်ကို ကိုယ်တိုင်ရိုက်ထည့်ရန်) */}
+                              <div className="relative flex-1">
+                                <Clock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input 
+                                  type="text" 
+                                  placeholder="e.g. 9:00 AM"
+                                  value={(ep.releaseDateRaw || '').includes('|||') ? ep.releaseDateRaw!.split('|||')[1] : ''} 
+                                  onChange={e => {
+                                    const eps = [...newVideo.episodes!]; 
+                                    const oldRaw = eps[idx].releaseDateRaw || '';
+                                    const currentDate = oldRaw.includes('|||') ? oldRaw.split('|||')[0] : oldRaw.split('T')[0];
+                                    const newTime = e.target.value;
+                                    eps[idx].releaseDateRaw = `${currentDate}|||${newTime}`;
+                                    
+                                    const d = new Date(currentDate);
+                                    const fd = currentDate && !isNaN(d.getTime()) ? `${d.getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()}` : currentDate;
+                                    eps[idx].releaseDate = newTime ? `${fd} ${newTime}` : fd;
+                                    setNewVideo({...newVideo, episodes: eps});
+                                  }} 
+                                  className="bg-zinc-900 pl-9 pr-2 py-2.5 rounded text-xs text-white border border-zinc-800 w-full outline-none focus:border-[#fcd385]" 
+                                />
+                              </div>
                             </div>
 
                             <button onClick={() => {
@@ -3315,12 +3369,26 @@ export default function SweetieWorldApp() {
                <Clock className="w-6 h-6 text-[#fcd385]" />
             </div>
             <div className="text-center mb-6 space-y-4">
-               <p className="text-white font-bold leading-relaxed text-sm">{TRANSLATIONS.en.alertNotReleased} <span className="text-[#fcd385]">{scheduleAlert.date}</span>. {TRANSLATIONS.en.alertOrJoinVip}</p>
-               <p className="text-zinc-300 font-bold leading-relaxed text-sm border-t border-zinc-700 pt-4">{TRANSLATIONS.mm.alertNotReleased} <span className="text-[#fcd385]">{scheduleAlert.date}</span> {TRANSLATIONS.mm.alertOrJoinVip}</p>
+               {scheduleAlert.show.vipTelegramLink ? (
+                  <>
+                     {/* VIP Link ရှိသော ကားများအတွက် (ယခင်အတိုင်း) */}
+                     <p className="text-white font-bold leading-relaxed text-sm">{TRANSLATIONS.en.alertNotReleased} <span className="text-[#fcd385]">{scheduleAlert.date}</span>. {TRANSLATIONS.en.alertOrJoinVip}</p>
+                     <p className="text-zinc-300 font-bold leading-relaxed text-sm border-t border-zinc-700 pt-4">{TRANSLATIONS.mm.alertNotReleased} <span className="text-[#fcd385]">{scheduleAlert.date}</span> {TRANSLATIONS.mm.alertOrJoinVip}</p>
+                  </>
+               ) : (
+                  <>
+                     {/* VIP Link မရှိသော Free ကားများအတွက် သီးသန့်စာသား */}
+                     <p className="text-white font-bold leading-relaxed text-sm">Not released yet! Please wait for the update.</p>
+                     <p className="text-zinc-300 font-bold leading-relaxed text-sm border-t border-zinc-700 pt-4">မကြာမီ တင်ပေးသွားမည်ဖြစ်ပါသဖြင့် {scheduleAlert.date && <><span className="text-[#fcd385]">{scheduleAlert.date}</span> အထိ</>} ခေတ္တစောင့်မျှော်ပေးပါ။</p>
+                  </>
+               )}
             </div>
             <div className="flex gap-3">
               <button onClick={() => setScheduleAlert(null)} className="flex-1 bg-zinc-800 text-white font-bold py-2.5 rounded-xl shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1 transition-all">OK</button>
-              <button onClick={() => {setScheduleAlert(null); setVipModalShow(scheduleAlert.show);}} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-2.5 rounded-xl shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1 transition-all">{t.joinVip}</button>
+              {/* VIP Link ရှိမှသာ VIP ဝင်မည် ခလုတ်ကို ပြပေးမည် */}
+              {scheduleAlert.show.vipTelegramLink && (
+                 <button onClick={() => {setScheduleAlert(null); setVipModalShow(scheduleAlert.show);}} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-2.5 rounded-xl shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1 transition-all">{t.joinVip}</button>
+              )}
             </div>
           </div>
         </div>
