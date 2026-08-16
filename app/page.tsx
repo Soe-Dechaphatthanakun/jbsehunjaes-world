@@ -516,7 +516,15 @@ export default function SweetieWorldApp() {
   useEffect(() => {
     if (isInitialLoad) return;
     const interval = setInterval(() => { syncLatestData(); }, 30000); 
-    return () => clearInterval(interval);
+    
+    // --- ထပ်ဖြည့်ရန်: Browser Tab ကို ပြန်ဝင်ကြည့်တာနဲ့ ချက်ချင်း Sync လုပ်ပေးရန် ---
+    const handleFocus = () => { syncLatestData(); };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+       clearInterval(interval);
+       window.removeEventListener('focus', handleFocus);
+    };
   }, [isInitialLoad]);
 
   useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users, isInitialLoad, isDataFetched]);
@@ -677,6 +685,12 @@ export default function SweetieWorldApp() {
     if (uSnap.exists() && uSnap.data().data) {
        latestUsers = uSnap.data().data;
     }
+    
+    // --- ထပ်ဖြည့်ရန်: Point Request History ကိုပါ နောက်ဆုံးဟာ လှမ်းဆွဲမည် ---
+    const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
+    if (pSnap.exists() && pSnap.data().data) {
+       setPointRequests(pSnap.data().data);
+    }
 
     if (authMode === 'register') {
       const exists = latestUsers.find(u => u.username.toLowerCase() === authForm.username.trim().toLowerCase() || u.email.toLowerCase() === authForm.email.trim().toLowerCase());
@@ -703,7 +717,7 @@ export default function SweetieWorldApp() {
 
       const updatedUsersList = [newUser, ...latestUsers];
       setUsers(updatedUsersList); // အကောင့်သစ်ကို အပေါ်ဆုံးရောက်အောင် ပြင်ပါသည်
-      await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
+      setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
 
       setCurrentUser(newUser);
       if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
@@ -724,7 +738,7 @@ export default function SweetieWorldApp() {
         const updatedUser = { ...user, lastLoginAt: new Date().toISOString() };
         const updatedUsersList = latestUsers.map(u => u.username === updatedUser.username ? updatedUser : u);
         setUsers(updatedUsersList);
-        await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
+        setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
 
         setCurrentUser(updatedUser);
         if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
