@@ -2475,24 +2475,31 @@ export default function SweetieWorldApp() {
                             vipTelegramLink: newVideo.vipTelegramLink || '', pointsPerEp: newVideo.pointsPerEp ?? 20
                           };
                           if (editingShowId) {
-  // Update လုပ်လိုက်တဲ့ ဇာတ်ကားကို လက်ရှိနေရာကနေဖယ်ပြီး အပေါ်ဆုံး(ထိပ်ဆုံး)သို့ ပို့ပေးရန်
-  setShows([itemToSave, ...shows.filter(s => s.id !== editingShowId)]);
-  setEditingShowId(null);
-} else {
-  setShows([itemToSave, ...shows]);
-  // --- NEW: NOTIFY ALL USERS ON NEW MOVIE ---
-  const newTitle = itemToSave.title_mm || itemToSave.title_en;
-  const newNoti: NotificationData = {
-     id: Date.now().toString()+'_noti',
-     targetUser: 'all',
-     message: `"${newTitle}" ဇာတ်လမ်းသစ် တင်လိုက်ပါပြီ။`,
-     date: new Date().toISOString(),
-     isRead: false,
-     actionType: 'new_upload'
-  };
-  setNotifications([newNoti, ...notifications]);
-  // ------------------------------------------
-}
+                            // Update လုပ်လိုက်တဲ့ ဇာတ်ကားကို လက်ရှိနေရာကနေဖယ်ပြီး အပေါ်ဆုံးသို့ ပို့ပေးရန်
+                            const updatedShows = [itemToSave, ...shows.filter(s => s.id !== editingShowId)];
+                            setShows(updatedShows);
+                            setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); // ချက်ချင်း Database ပေါ် တိုက်ရိုက်တင်မည်
+                            setEditingShowId(null);
+                          } else {
+                            const updatedShows = [itemToSave, ...shows];
+                            setShows(updatedShows);
+                            setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); // ချက်ချင်း Database ပေါ် တိုက်ရိုက်တင်မည်
+                            
+                            // --- NEW: NOTIFY ALL USERS ON NEW MOVIE ---
+                            const newTitle = itemToSave.title_mm || itemToSave.title_en;
+                            const newNoti: NotificationData = {
+                               id: Date.now().toString()+'_noti',
+                               targetUser: 'all',
+                               message: `"${newTitle}" ဇာတ်လမ်းသစ် တင်လိုက်ပါပြီ။`,
+                               date: new Date().toISOString(),
+                               isRead: false,
+                               actionType: 'new_upload'
+                            };
+                            const updatedNotis = [newNoti, ...notifications];
+                            setNotifications(updatedNotis);
+                            setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis }); // Noti ကိုပါ ချက်ချင်း Database ပေါ် တင်မည်
+                            // ------------------------------------------
+                          }
                           showToast(t.msgUploaded); 
                           setNewVideo({episodes:[], title_en: '', title_mm: '', vipTelegramLink: '', pointsPerEp: 20});
                         }} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-3 rounded-lg shadow-lg hover:brightness-110 transition">

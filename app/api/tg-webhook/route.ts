@@ -19,16 +19,16 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // 🌟 ပြင်ဆင်ထားသော နေရာ: Post အသစ်ရော၊ Edit လုပ်ထားတဲ့ Post အဟောင်းကိုပါ လက်ခံမည် 🌟
-    const post = body.channel_post || body.edited_channel_post;
+    // 🌟 ပြင်ဆင်ချက် (၁) - Channel သာမက Group/Private Chat က Edit လုပ်တာတွေကိုပါ ဖမ်းနိုင်ရန် 🌟
+    const post = body.channel_post || body.edited_channel_post || body.message || body.edited_message;
     
-    if (!post) return NextResponse.json({ success: true, msg: 'Not a channel post' });
+    if (!post) return NextResponse.json({ success: true, msg: 'Not a valid post' });
 
     // စာသား သို့မဟုတ် ပုံ/ဗီဒီယိုရဲ့ Caption ကို ယူခြင်း
     const content = post.text || post.caption || '';
     
-    // Auto-Link Tag ကို ရှာဖွေခြင်း (ဥပမာ: #vid-123456789_ep1)
-    const match = content.match(/#(vid-\d+)_ep(\d+)/);
+    // 🌟 ပြင်ဆင်ချက် (၂) - vid- သာမက cw-1 ကဲ့သို့သော ID များနှင့် အကြီး/အသေး မှားရိုက်မိတာတွေကိုပါ အကုန်လက်ခံရန် (/i ကိုသုံးထားသည်) 🌟
+    const match = content.match(/#([a-zA-Z0-9_-]+)_ep(\d+)/i);
     if (!match) return NextResponse.json({ success: true, msg: 'No auto-link tag found' });
 
     const movieId = match[1];
@@ -52,7 +52,8 @@ export async function POST(request: Request) {
       let isUpdated = false;
 
       shows = shows.map((show: any) => {
-        if (show.id === movieId) {
+        // 🌟 ပြင်ဆင်ချက် (၃) - Telegram မှာ အကြီး/အသေး မှားရိုက်မိခဲ့ရင်တောင် အလုပ်လုပ်အောင် toLowerCase() ဖြင့် စစ်ဆေးခြင်း 🌟
+        if (show.id.toLowerCase() === movieId.toLowerCase()) {
           if (show.episodes && show.episodes[epNumber - 1]) {
             const ep = show.episodes[epNumber - 1];
             if (!ep.links) ep.links = [];
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
       // ပြင်ဆင်ပြီးသား Data ကို Database ထဲ Save ခြင်း (နှင့် အပေါ်ဆုံးသို့ ရွှေ့ခြင်း)
       if (isUpdated) {
         let updatedTitle = "";
-        const updatedShowIndex = shows.findIndex((s: any) => s.id === movieId);
+        const updatedShowIndex = shows.findIndex((s: any) => s.id.toLowerCase() === movieId.toLowerCase());
         if (updatedShowIndex !== -1) {
           updatedTitle = shows[updatedShowIndex].title_mm || shows[updatedShowIndex].title_en || 'ဇာတ်ကား';
           const updatedShow = shows.splice(updatedShowIndex, 1)[0];
