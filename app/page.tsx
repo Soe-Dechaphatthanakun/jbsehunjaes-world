@@ -46,7 +46,7 @@ interface ContentItem { id: string; title_en: string; body_en: string; title_mm:
 interface PromoItem { id: string; title_en: string; body_en: string; title_mm: string; body_mm: string; image?: string; }
 interface SocialLink { id: string; platform: string; url: string; logo?: string; }
 interface SiteConfig { marqueeEn: string; marqueeMm: string; depositGuideEn: string; depositGuideMm: string; paymentWarningEn: string; paymentWarningMm: string; socialLinks: SocialLink[]; }
-interface NotificationData { id: string; targetUser: string; message: string; detail?: string; date: string; isRead: boolean; actionType: 'point_request' | 'point_approve' | 'point_reject' | 'admin_edit' | 'new_user' | 'new_upload' | 'ep_update'; }
+interface NotificationData { id: string; targetUser: string; message: string; detail?: string; date: string; isRead: boolean; actionType: 'point_request' | 'point_approve' | 'point_reject' | 'admin_edit' | 'new_user' | 'new_upload' | 'ep_update'; readBy?: string[]; }
 interface AdminLogData { id: string; adminName: string; targetUser: string; action: string; remark: string; date: string; }
 
 // ------------------------------------------------------------------
@@ -867,7 +867,19 @@ export default function SweetieWorldApp() {
 
   const handleNotiClick = (n: NotificationData) => {
      // ၁။ Local မှာ "ဖတ်ပြီး" လို့ အရင်ပြောင်းမည်
-     const updatedNotis = notifications.map(x => x.id === n.id ? {...x, isRead: true} : x);
+     const updatedNotis = notifications.map(x => {
+       if (x.id === n.id) {
+         if (x.targetUser === 'all' && currentUser) {
+           const currentReadBy = x.readBy || [];
+           if (!currentReadBy.includes(currentUser.username)) {
+             return { ...x, readBy: [...currentReadBy, currentUser.username] };
+           }
+           return x;
+         }
+         return { ...x, isRead: true };
+       }
+       return x;
+     });
      setNotifications(updatedNotis);
      
      // ၂။ Race Condition ကိုကျော်ဖြတ်ရန် Firebase ဆီသို့ "ဖတ်ပြီးကြောင်း" တိုက်ရိုက်လှမ်းသိမ်းမည်
@@ -981,7 +993,10 @@ export default function SweetieWorldApp() {
   const paginatedMethodDetailLogs = methodDetailLogs.slice((methodDetailPage - 1) * methodDetailPerPage, methodDetailPage * methodDetailPerPage);
 
   const myNotis = notifications.filter(n => n.targetUser === 'all' || n.targetUser === currentUser?.username || (currentUser?.role === 'admin' && n.targetUser === 'admin')).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const unreadNotiCount = myNotis.filter(n => !n.isRead).length;
+  const unreadNotiCount = myNotis.filter(n => {
+    if (n.targetUser === 'all') return !(n.readBy && currentUser && n.readBy.includes(currentUser.username));
+    return !n.isRead;
+  }).length;
 
   // DERIVED DATA FOR USER DETAIL HISTORY
   let combinedHistory: any[] = [];
@@ -1179,20 +1194,31 @@ export default function SweetieWorldApp() {
                    <div className="fixed sm:absolute left-4 right-4 sm:left-auto sm:right-0 top-16 sm:top-12 sm:mt-1 w-auto sm:w-[320px] max-h-[70vh] sm:max-h-[80vh] bg-[#1a1a1a] border border-[#fcd385]/30 shadow-2xl rounded-2xl z-[200] flex flex-col overflow-hidden animate-fade-in mx-auto">
                       <div className="p-4 border-b border-zinc-800 bg-[#161616] flex justify-between items-center">
                         <h4 className="font-bold text-[#fcd385] flex items-center gap-2"><Bell className="w-4 h-4"/> {t.notifications}</h4>
-                        {myNotis.length > 0 && <button onClick={() => setNotifications(notifications.map(n => (n.targetUser === 'all' || n.targetUser === currentUser.username || (currentUser.role === 'admin' && n.targetUser === 'admin')) ? { ...n, isRead: true } : n))} className="text-[10px] text-zinc-400 hover:text-white transition">{t.markAllRead}</button>}
+                        {myNotis.length > 0 && <button onClick={() => setNotifications(notifications.map(n => {
+  const isMine = n.targetUser === 'all' || n.targetUser === currentUser?.username || (currentUser?.role === 'admin' && n.targetUser === 'admin');
+  if (!isMine) return n;
+  if (n.targetUser === 'all' && currentUser) {
+    const currentReadBy = n.readBy || [];
+    return currentReadBy.includes(currentUser.username) ? n : { ...n, readBy: [...currentReadBy, currentUser.username] };
+  }
+  return { ...n, isRead: true };
+}))} className="text-[10px] text-zinc-400 hover:text-white transition">{t.markAllRead}</button>}
                       </div>
                       <div className="flex-1 overflow-y-auto max-h-[300px] custom-scrollbar">
-                         {myNotis.length === 0 ? <p className="text-xs text-zinc-500 text-center py-6">{t.noNoti}</p> : myNotis.map(n => (
-                           <div key={n.id} onClick={() => handleNotiClick(n)} className={`p-4 border-b border-zinc-800/50 cursor-pointer hover:bg-black/40 transition flex gap-3 ${n.isRead ? 'opacity-60' : 'bg-[#2b0303]/30 border-l-2 border-l-[#fcd385]'}`}>
+                         {myNotis.length === 0 ? <p className="text-xs text-zinc-500 text-center py-6">{t.noNoti}</p> : myNotis.map(n => {
+                           const isActuallyRead = n.targetUser === 'all' ? (n.readBy && currentUser && n.readBy.includes(currentUser.username)) : n.isRead;
+                           return (
+                           <div key={n.id} onClick={() => handleNotiClick(n)} className={`p-4 border-b border-zinc-800/50 cursor-pointer hover:bg-black/40 transition flex gap-3 ${isActuallyRead ? 'opacity-60' : 'bg-[#2b0303]/30 border-l-2 border-l-[#fcd385]'}`}>
                               <div className="shrink-0 mt-1">
                                 {n.actionType === 'point_request' ? <AlertCircle className="w-5 h-5 text-yellow-400"/> : n.actionType === 'point_approve' ? <CheckCircle className="w-5 h-5 text-emerald-400"/> : n.actionType === 'point_reject' ? <XCircle className="w-5 h-5 text-red-500"/> : <Mail className="w-5 h-5 text-blue-400"/>}
                               </div>
                               <div>
-                                <p className={`text-xs ${n.isRead ? 'text-zinc-300' : 'text-white font-bold'} mb-1`}>{n.message}</p>
+                                <p className={`text-xs ${isActuallyRead ? 'text-zinc-300' : 'text-white font-bold'} mb-1`}>{n.message}</p>
                                 <span className="text-[9px] text-zinc-500">{formatDateTime(n.date)}</span>
                               </div>
                            </div>
-                         ))}
+                           );
+                         })}
                       </div>
                    </div>
                  )}
@@ -1287,19 +1313,30 @@ export default function SweetieWorldApp() {
                       <button onClick={() => setUserMenuTab('menu')} className="p-1 rounded text-zinc-400 hover:text-white transition bg-black/50"><ChevronLeft className="w-5 h-5"/></button>
                       <h3 className="font-bold text-[#fcd385] flex items-center gap-2"><Mail className="w-4 h-4"/> {t.inbox}</h3>
                     </div>
-                    {myNotis.length > 0 && <button onClick={() => setNotifications(notifications.map(n => (n.targetUser === 'all' || n.targetUser === currentUser.username || (currentUser.role === 'admin' && n.targetUser === 'admin')) ? { ...n, isRead: true } : n))} className="text-[10px] text-zinc-400 hover:text-white transition">{t.markAllRead}</button>}
+                    {myNotis.length > 0 && <button onClick={() => setNotifications(notifications.map(n => {
+  const isMine = n.targetUser === 'all' || n.targetUser === currentUser?.username || (currentUser?.role === 'admin' && n.targetUser === 'admin');
+  if (!isMine) return n;
+  if (n.targetUser === 'all' && currentUser) {
+    const currentReadBy = n.readBy || [];
+    return currentReadBy.includes(currentUser.username) ? n : { ...n, readBy: [...currentReadBy, currentUser.username] };
+  }
+  return { ...n, isRead: true };
+}))} className="text-[10px] text-zinc-400 hover:text-white transition">{t.markAllRead}</button>}
                   </div>
                   <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-                     {myNotis.length === 0 ? <p className="text-zinc-500 text-xs text-center py-6">{t.noNoti}</p> : myNotis.map(n => (
-                       <div key={n.id} className={`p-4 rounded-xl border flex flex-col gap-2 shadow-inner transition ${n.isRead ? 'bg-[#1f1f1f] border-zinc-800' : 'bg-[#2b0303] border-[#fcd385]/30'}`} onClick={() => { if(!n.isRead) setNotifications(notifications.map(x => x.id === n.id ? {...x, isRead: true} : x)) }}>
+                     {myNotis.length === 0 ? <p className="text-zinc-500 text-xs text-center py-6">{t.noNoti}</p> : myNotis.map(n => {
+                       const isActuallyRead = n.targetUser === 'all' ? (n.readBy && currentUser && n.readBy.includes(currentUser.username)) : n.isRead;
+                       return (
+                       <div key={n.id} className={`p-4 rounded-xl border flex flex-col gap-2 shadow-inner transition ${isActuallyRead ? 'bg-[#1f1f1f] border-zinc-800' : 'bg-[#2b0303] border-[#fcd385]/30'}`} onClick={() => { if(!isActuallyRead) handleNotiClick(n) }}>
                           <div className="flex justify-between items-start gap-2">
-                             <p className={`text-xs ${n.isRead ? 'text-zinc-300' : 'text-white font-bold'}`}>{n.message}</p>
-                             {!n.isRead && <span className="w-2 h-2 rounded-full bg-[#fcd385] shrink-0 mt-1"></span>}
+                             <p className={`text-xs ${isActuallyRead ? 'text-zinc-300' : 'text-white font-bold'}`}>{n.message}</p>
+                             {!isActuallyRead && <span className="w-2 h-2 rounded-full bg-[#fcd385] shrink-0 mt-1"></span>}
                           </div>
                           {n.detail && <p className="text-[11px] text-zinc-400 bg-black/40 p-2 rounded-lg border border-zinc-800/50 leading-relaxed font-bold tracking-wide italic">{n.detail}</p>}
                           <p className="text-[9px] text-zinc-500 mt-1">{formatDateTime(n.date)}</p>
                        </div>
-                     ))}
+                       );
+                     })}
                   </div>
                </div>
              )}
