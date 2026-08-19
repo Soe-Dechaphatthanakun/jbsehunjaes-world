@@ -1044,7 +1044,7 @@ export default function SweetieWorldApp() {
 
   if (isInitialLoad) {
     return (
-      <div className="min-h-screen bg-[#111111] flex flex-col items-center justify-center text-[#fcd385]">
+      <div translate="no" className="notranslate min-h-screen bg-[#111111] flex flex-col items-center justify-center text-[#fcd385]">
         <div className="w-12 h-12 border-4 border-[#fcd385] border-t-transparent rounded-full animate-spin mb-4"></div>
         <p className="font-bold tracking-widest uppercase text-sm">Loading Jbsehunjae’s World...</p>
       </div>
@@ -1055,7 +1055,7 @@ export default function SweetieWorldApp() {
   // 6. RENDER JSX
   // ==========================================
   return (
-    <div className="min-h-screen bg-[#111111] text-gray-100 pb-20" style={{ fontFamily: '"Georgia", "Times New Roman", "Myanmar Text", serif' }}>
+    <div translate="no" className="notranslate min-h-screen bg-[#111111] text-gray-100 pb-20" style={{ fontFamily: '"Georgia", "Times New Roman", "Myanmar Text", serif' }}>
       
       {/* CSS For Right to Left Marquee & Calendar Icon Invert */}
       <style dangerouslySetInnerHTML={{__html: `
