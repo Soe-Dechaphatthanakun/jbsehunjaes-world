@@ -479,7 +479,7 @@ export default function SweetieWorldApp() {
         setIsDataFetched(true); 
       } catch(e) { console.error("Firebase fetch error", e); } finally { 
           setIsInitialLoad(false); 
-          setTimeout(() => { isReadyToSave.current = true; }, 2000); // 2 စက္ကန့်ကြာမှ Auto-save ကို ပြန်ဖွင့်ပေးမည်
+          isReadyToSave.current = true; // ချက်ချင်း Save လို့ရအောင် ဖွင့်ပေးလိုက်ပါသည်
       }
     };
     loadData();
