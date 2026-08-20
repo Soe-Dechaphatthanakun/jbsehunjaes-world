@@ -1610,6 +1610,73 @@ export default function SweetieWorldApp() {
                         <div className="bg-[#1f1f1f] p-5 rounded-2xl border border-zinc-800 shadow-xl overflow-x-auto mt-6">
                            <h4 className="text-lg font-black text-[#fcd385] mb-4 flex items-center gap-2"><Eye className="w-5 h-5"/> ဇာတ်ကား ကြည့်ရှုမှု မှတ်တမ်းများ (Movie View Stats)</h4>
                            
+                           {/* --- NEW: BAR CHART FOR DAILY TOTAL VIEWS --- */}
+                           {(() => {
+                              // လွန်ခဲ့သော ၁၄ ရက်စာ နေ့စွဲများကို ဖန်တီးခြင်း
+                              const last14Days = Array.from({length: 14}, (_, i) => {
+                                  const d = new Date();
+                                  d.setDate(d.getDate() - (13 - i));
+                                  return d.toISOString().split('T')[0];
+                              });
+
+                              // နေ့အလိုက် ဇာတ်ကားအားလုံး၏ View များကို စုပေါင်းခြင်း
+                              const dailyTotals: Record<string, number> = {};
+                              Object.values(movieViews).forEach(movie => {
+                                 if(movie.dates) {
+                                     Object.entries(movie.dates).forEach(([dateStr, count]) => {
+                                         dailyTotals[dateStr] = (dailyTotals[dateStr] || 0) + count;
+                                     });
+                                 }
+                              });
+
+                              const chartData = last14Days.map(date => {
+                                  const dObj = new Date(date);
+                                  return {
+                                      date,
+                                      shortDate: `${dObj.toLocaleString('en-US', { month: 'short' })} ${dObj.getDate()}`,
+                                      count: dailyTotals[date] || 0
+                                  };
+                              });
+
+                              const maxChartCount = Math.max(...chartData.map(d => d.count), 1);
+
+                              return (
+                                 <div className="mb-8 mt-4 bg-black/30 p-4 sm:p-6 rounded-xl border border-zinc-800/50">
+                                    <div className="flex justify-between items-end mb-8">
+                                       <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Daily Views Overview (Last 14 Days)</p>
+                                       <p className="text-xs font-bold text-zinc-400">Total: <span className="text-sm font-black text-emerald-400">{chartData.reduce((sum, d) => sum + d.count, 0).toLocaleString()}</span></p>
+                                    </div>
+                                    
+                                    <div className="h-40 sm:h-48 flex items-end gap-1 sm:gap-2 border-b border-zinc-700 pb-1 relative">
+                                       {chartData.map((data, idx) => {
+                                          const heightPct = (data.count / maxChartCount) * 100;
+                                          return (
+                                            <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                                               {/* Tooltip on Hover */}
+                                               <div className="absolute -top-8 bg-zinc-200 text-black text-[10px] sm:text-xs font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 shadow-lg">
+                                                  {data.count.toLocaleString()} Views
+                                               </div>
+                                               
+                                               {/* Bar Chart (Matches the reference image style) */}
+                                               <div 
+                                                 className="w-full max-w-[35px] bg-[#4a5568] group-hover:bg-[#a0aec0] rounded-t-[2px] transition-colors duration-200"
+                                                 style={{ height: data.count > 0 ? `${Math.max(heightPct, 2)}%` : '0%' }}
+                                               ></div>
+                                               
+                                               {/* X-Axis Date Label */}
+                                               <div className="absolute -bottom-6 text-[8px] sm:text-[10px] text-zinc-500 font-mono w-full text-center whitespace-nowrap overflow-hidden">
+                                                  {data.shortDate}
+                                               </div>
+                                            </div>
+                                          )
+                                       })}
+                                    </div>
+                                    <div className="h-4"></div> {/* Spacing for labels */}
+                                 </div>
+                              );
+                           })()}
+                           {/* --- END CHART --- */}
+
                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
                               <div className="relative w-full sm:w-72">
                                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
