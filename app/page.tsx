@@ -242,6 +242,14 @@ export default function SweetieWorldApp() {
   const [viewStatsDate, setViewStatsDate] = useState(new Date().toISOString().split('T')[0]);
   const [viewStatsPage, setViewStatsPage] = useState(1);
   const [viewStatsPerPage, setViewStatsPerPage] = useState(10);
+  // NEW: Sorting State for View Stats Table
+  const [viewStatsSortConfig, setViewStatsSortConfig] = useState<{key: 'today' | 'total' | 'date', direction: 'asc' | 'desc'}>({ key: 'date', direction: 'desc' });
+  const handleViewStatsSort = (key: 'today' | 'total' | 'date') => {
+    setViewStatsSortConfig(prev => ({
+       key,
+       direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
+    }));
+  };
   
   // USER / AUTH STATES
   const [currentUser, setCurrentUser] = useState<UserData | null>(null);
@@ -360,6 +368,7 @@ export default function SweetieWorldApp() {
 
   const notiRef = useRef<HTMLDivElement>(null);
   const isSyncing = useRef(false); // NEW: Sync လုပ်နေစဉ် Auto-Save ခဏပိတ်ရန်
+  const isReadyToSave = useRef(false); // NEW: Website ပွင့်ခါစ Refresh နှိပ်တိုင်း Auto-save ဖြစ်ခြင်းကို တားရန်
 
   // ==========================================
   // 2. HELPER FUNCTIONS
@@ -468,7 +477,10 @@ export default function SweetieWorldApp() {
         
         // NEW: Error မတက်ဘဲ အကုန်အောင်မြင်မှသာ True ပြောင်းပေးမည်
         setIsDataFetched(true); 
-      } catch(e) { console.error("Firebase fetch error", e); } finally { setIsInitialLoad(false); }
+      } catch(e) { console.error("Firebase fetch error", e); } finally { 
+          setIsInitialLoad(false); 
+          setTimeout(() => { isReadyToSave.current = true; }, 2000); // 2 စက္ကန့်ကြာမှ Auto-save ကို ပြန်ဖွင့်ပေးမည်
+      }
     };
     loadData();
 
@@ -542,18 +554,18 @@ export default function SweetieWorldApp() {
     };
   }, [isInitialLoad]);
 
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "shows"), { data: shows }); }, [shows, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "categories"), { data: categories }); }, [categories, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "platforms"), { data: platforms }); }, [platforms, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "promotions"), { data: promotions }); }, [promotions, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "faqs"), { data: faqs }); }, [faqs, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "pointRequests"), { data: pointRequests }); }, [pointRequests, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "notifications"), { data: notifications }); }, [notifications, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }); }, [adminLogs, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }); }, [paymentProviders, isInitialLoad, isDataFetched]);
-  useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }); }, [siteConfig, isInitialLoad, isDataFetched]);
-useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "movieViews"), { data: movieViews }); }, [movieViews, isInitialLoad, isDataFetched]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "shows"), { data: shows }); }, [shows]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "categories"), { data: categories }); }, [categories]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "platforms"), { data: platforms }); }, [platforms]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "promotions"), { data: promotions }); }, [promotions]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "faqs"), { data: faqs }); }, [faqs]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "pointRequests"), { data: pointRequests }); }, [pointRequests]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "notifications"), { data: notifications }); }, [notifications]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }); }, [adminLogs]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }); }, [paymentProviders]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }); }, [siteConfig]);
+  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "movieViews"), { data: movieViews }); }, [movieViews]);
 
   // NEW: Direct Link ဖြင့် ဝင်လာပါက ဇာတ်ကားကို အလိုလို ဖွင့်ပေးမည်
   useEffect(() => {
@@ -1610,12 +1622,18 @@ useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) set
                            </div>
 
                            <table className="w-full text-left text-sm text-zinc-300 min-w-[700px]">
-                              <thead className="text-[10px] uppercase bg-black/60 text-zinc-400 border-b border-zinc-800">
+                              <thead className="text-[10px] uppercase bg-black/60 text-zinc-400 border-b border-zinc-800 select-none">
                                  <tr>
                                     <th className="px-4 py-3">Movie Title</th>
-                                    <th className="px-4 py-3 text-right">Views ({viewStatsDate === new Date().toISOString().split('T')[0] ? 'Today' : viewStatsDate})</th>
-                                    <th className="px-4 py-3 text-right">Total Views</th>
-                                    <th className="px-4 py-3 text-right">Last Viewed</th>
+                                    <th className="px-4 py-3 text-right cursor-pointer hover:text-white transition group" onClick={() => handleViewStatsSort('today')}>
+                                       <div className="flex items-center justify-end gap-1">Views ({viewStatsDate === new Date().toISOString().split('T')[0] ? 'Today' : viewStatsDate}) <span className={`text-[10px] ${viewStatsSortConfig.key === 'today' ? 'text-[#fcd385]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>{viewStatsSortConfig.key === 'today' ? (viewStatsSortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span></div>
+                                    </th>
+                                    <th className="px-4 py-3 text-right cursor-pointer hover:text-white transition group" onClick={() => handleViewStatsSort('total')}>
+                                       <div className="flex items-center justify-end gap-1">Total Views <span className={`text-[10px] ${viewStatsSortConfig.key === 'total' ? 'text-[#fcd385]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>{viewStatsSortConfig.key === 'total' ? (viewStatsSortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span></div>
+                                    </th>
+                                    <th className="px-4 py-3 text-right cursor-pointer hover:text-white transition group" onClick={() => handleViewStatsSort('date')}>
+                                       <div className="flex items-center justify-end gap-1">Last Viewed <span className={`text-[10px] ${viewStatsSortConfig.key === 'date' ? 'text-[#fcd385]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>{viewStatsSortConfig.key === 'date' ? (viewStatsSortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span></div>
+                                    </th>
                                  </tr>
                               </thead>
                               <tbody>
@@ -1636,9 +1654,15 @@ useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) set
                                     const filteredViewStats = viewStatsArray
                                        .filter(s => s.searchStr.includes(viewStatsSearch.toLowerCase()))
                                        .sort((a, b) => {
-                                           if (b.targetDateViews !== a.targetDateViews) return b.targetDateViews - a.targetDateViews;
-                                           if (b.totalViews !== a.totalViews) return b.totalViews - a.totalViews;
-                                           return new Date(b.lastViewed || 0).getTime() - new Date(a.lastViewed || 0).getTime();
+                                           let comparison = 0;
+                                           if (viewStatsSortConfig.key === 'today') {
+                                              comparison = a.targetDateViews - b.targetDateViews;
+                                           } else if (viewStatsSortConfig.key === 'total') {
+                                              comparison = a.totalViews - b.totalViews;
+                                           } else if (viewStatsSortConfig.key === 'date') {
+                                              comparison = new Date(a.lastViewed || 0).getTime() - new Date(b.lastViewed || 0).getTime();
+                                           }
+                                           return viewStatsSortConfig.direction === 'asc' ? comparison : -comparison;
                                        });
 
                                     const paginatedViewStats = filteredViewStats.slice((viewStatsPage - 1) * viewStatsPerPage, viewStatsPage * viewStatsPerPage);
