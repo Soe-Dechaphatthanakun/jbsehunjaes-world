@@ -1624,7 +1624,9 @@ useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) set
                                        const stats = movieViews[s.id] || { total: 0, dates: {}, lastViewed: '' };
                                        return {
                                           id: s.id,
-                                          title: s.title_en || s.title_mm,
+                                          // NEW: ဘာသာစကားရွေးချယ်မှု (lang) ပေါ်မူတည်ပြီး မြန်မာ/English နာမည် အလိုလို ပြောင်းပေးမည်
+                                          displayTitle: lang === 'en' ? (s.title_en || s.title_mm) : (s.title_mm || s.title_en),
+                                          searchStr: `${s.title_en || ''} ${s.title_mm || ''}`.toLowerCase(),
                                           targetDateViews: stats.dates[viewStatsDate] || 0,
                                           totalViews: stats.total,
                                           lastViewed: stats.lastViewed
@@ -1632,7 +1634,7 @@ useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) set
                                     });
 
                                     const filteredViewStats = viewStatsArray
-                                       .filter(s => s.title.toLowerCase().includes(viewStatsSearch.toLowerCase()))
+                                       .filter(s => s.searchStr.includes(viewStatsSearch.toLowerCase()))
                                        .sort((a, b) => {
                                            if (b.targetDateViews !== a.targetDateViews) return b.targetDateViews - a.targetDateViews;
                                            if (b.totalViews !== a.totalViews) return b.totalViews - a.totalViews;
@@ -1645,7 +1647,7 @@ useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) set
 
                                     return paginatedViewStats.map(stat => (
                                        <tr key={stat.id} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
-                                          <td className="px-4 py-3 font-bold text-white truncate max-w-[200px]">{stat.title}</td>
+                                          <td className="px-4 py-3 font-bold text-white truncate max-w-[200px]" title={stat.displayTitle}>{stat.displayTitle}</td>
                                           <td className="px-4 py-3 text-right font-black text-emerald-400">{stat.targetDateViews.toLocaleString()}</td>
                                           <td className="px-4 py-3 text-right font-black text-[#fcd385]">{stat.totalViews.toLocaleString()}</td>
                                           <td className="px-4 py-3 text-right text-xs text-zinc-400">{formatDateTime(stat.lastViewed) || '-'}</td>
@@ -1655,7 +1657,8 @@ useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) set
                               </tbody>
                            </table>
                            
-                           {shows.length > 0 && renderPagination(viewStatsPage, setViewStatsPage, viewStatsPerPage, setViewStatsPerPage, shows.filter(s => (s.title_en || s.title_mm).toLowerCase().includes(viewStatsSearch.toLowerCase())).length)}
+                           {/* Pagination အတွက် မြန်မာ/English ၂ မျိုးလုံးကနေ ရှာလို့ရအောင် ပြင်ထားပါသည် */}
+                           {shows.length > 0 && renderPagination(viewStatsPage, setViewStatsPage, viewStatsPerPage, setViewStatsPerPage, shows.filter(s => (`${s.title_en || ''} ${s.title_mm || ''}`).toLowerCase().includes(viewStatsSearch.toLowerCase())).length)}
                         </div>
               </div>
             )}
