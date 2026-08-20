@@ -239,7 +239,7 @@ export default function SweetieWorldApp() {
   // NEW: Movie Views States
   const [movieViews, setMovieViews] = useState<Record<string, MovieViewData>>({});
   const [viewStatsSearch, setViewStatsSearch] = useState('');
-  const [viewStatsDate, setViewStatsDate] = useState(new Date().toISOString().split('T')[0]);
+  const [viewStatsDate, setViewStatsDate] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
   const [viewStatsPage, setViewStatsPage] = useState(1);
   const [viewStatsPerPage, setViewStatsPerPage] = useState(10);
   // NEW: Sorting State for View Stats Table
@@ -597,8 +597,9 @@ export default function SweetieWorldApp() {
   }, [shows]);
   // ==========================================
   // 4. ACTION HANDLERS
-	const trackMovieView = (showId: string) => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const trackMovieView = (showId: string) => {
+    const d = new Date(); 
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const localKey = `viewed_${showId}_${todayStr}`;
     // LocalStorage မှာ မရှိမှသာ View 1 ခါတက်မည် (Limit ကျော်ခြင်းမှ ကာကွယ်ရန်)
     if (!localStorage.getItem(localKey)) {
@@ -1631,7 +1632,7 @@ export default function SweetieWorldApp() {
                               const last14Days = Array.from({length: 14}, (_, i) => {
                                   const d = new Date();
                                   d.setDate(d.getDate() - (13 - i));
-                                  return d.toISOString().split('T')[0];
+                                  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
                               });
 
                               // နေ့အလိုက် ဇာတ်ကားအားလုံး၏ View များကို စုပေါင်းခြင်း
