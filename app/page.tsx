@@ -507,9 +507,23 @@ export default function SweetieWorldApp() {
   const syncLatestData = async () => {
     isSyncing.current = true; // NEW: Auto-save များကို ခဏပိတ်ထားမည်
     try {
-      const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
-      if (pSnap.exists() && pSnap.data().data) {
-         setPointRequests(prev => JSON.stringify(prev) !== JSON.stringify(pSnap.data().data) ? pSnap.data().data : prev);
+      // --- ၁။ Admin သာလျှင် Admin Data များကို ဆွဲယူမည် (သာမန် User များအတွက် Read အလကားမတက်အောင် ကာကွယ်ခြင်း) ---
+      if (currentUser?.role === 'admin') {
+         const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
+         if (pSnap.exists() && pSnap.data().data) {
+            setPointRequests(prev => JSON.stringify(prev) !== JSON.stringify(pSnap.data().data) ? pSnap.data().data : prev);
+         }
+         const lSnap = await getDoc(doc(db, "SiteData", "adminLogs"));
+         if (lSnap.exists() && lSnap.data().data) {
+            setAdminLogs(prev => JSON.stringify(prev) !== JSON.stringify(lSnap.data().data) ? lSnap.data().data : prev);
+         }
+      }
+
+      // --- ၂။ User အားလုံးအတွက် မရှိမဖြစ် လိုအပ်သော Data များ ---
+      // NEW: ဇာတ်ကား Link အသစ်များကို Refresh လုပ်စရာမလိုဘဲ Auto-Update ဖြစ်စေရန်
+      const sSnap = await getDoc(doc(db, "SiteData", "shows"));
+      if (sSnap.exists() && sSnap.data().data) {
+         setShows(prev => JSON.stringify(prev) !== JSON.stringify(sSnap.data().data) ? sSnap.data().data : prev);
       }
       const uSnap = await getDoc(doc(db, "SiteData", "users"));
       if (uSnap.exists() && uSnap.data().data) {
@@ -525,11 +539,7 @@ export default function SweetieWorldApp() {
       if (nSnap.exists() && nSnap.data().data) {
          setNotifications(prev => JSON.stringify(prev) !== JSON.stringify(nSnap.data().data) ? nSnap.data().data : prev);
       }
-      const lSnap = await getDoc(doc(db, "SiteData", "adminLogs"));
-      if (lSnap.exists() && lSnap.data().data) {
-         setAdminLogs(prev => JSON.stringify(prev) !== JSON.stringify(lSnap.data().data) ? lSnap.data().data : prev);
-      }
-	const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
+      const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
       if (mvSnap.exists() && mvSnap.data().data) {
          setMovieViews(prev => JSON.stringify(prev) !== JSON.stringify(mvSnap.data().data) ? mvSnap.data().data : prev);
       }
@@ -542,17 +552,22 @@ export default function SweetieWorldApp() {
 
   useEffect(() => {
     if (isInitialLoad) return;
-    const interval = setInterval(() => { syncLatestData(); }, 30000); 
+
+    let interval: any;
+    // ၁။ Admin ဖြစ်မှသာ စက္ကန့် ၃၀ တစ်ခါ အလိုလို Sync လုပ်မည် (Read မတက်အောင် ကာကွယ်ထားခြင်း)
+    if (currentUser?.role === 'admin') {
+       interval = setInterval(() => { syncLatestData(); }, 30000); 
+    }
     
-    // --- ထပ်ဖြည့်ရန်: Browser Tab ကို ပြန်ဝင်ကြည့်တာနဲ့ ချက်ချင်း Sync လုပ်ပေးရန် ---
+    // ၂။ User အားလုံးအတွက် (Website ကို ပြန်ဖွင့်တဲ့အချိန် / Tab ပြောင်းပြီး ပြန်ဝင်လာတဲ့အချိန်) မှသာ Data အသစ်လှမ်းဆွဲမည်
     const handleFocus = () => { syncLatestData(); };
     window.addEventListener('focus', handleFocus);
 
     return () => {
-       clearInterval(interval);
+       if (interval) clearInterval(interval);
        window.removeEventListener('focus', handleFocus);
     };
-  }, [isInitialLoad]);
+  }, [isInitialLoad, currentUser?.role]);
 
   useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users]);
   useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "shows"), { data: shows }); }, [shows]);
