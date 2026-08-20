@@ -48,6 +48,8 @@ interface SocialLink { id: string; platform: string; url: string; logo?: string;
 interface SiteConfig { marqueeEn: string; marqueeMm: string; depositGuideEn: string; depositGuideMm: string; paymentWarningEn: string; paymentWarningMm: string; socialLinks: SocialLink[]; }
 interface NotificationData { id: string; targetUser: string; message: string; detail?: string; date: string; isRead: boolean; actionType: 'point_request' | 'point_approve' | 'point_reject' | 'admin_edit' | 'new_user' | 'new_upload' | 'ep_update'; readBy?: string[]; }
 interface AdminLogData { id: string; adminName: string; targetUser: string; action: string; remark: string; date: string; }
+// NEW: View Tracking Interface
+interface MovieViewData { total: number; dates: Record<string, number>; lastViewed: string; }
 
 // ------------------------------------------------------------------
 // INITIAL CONSTANTS & DEFAULT DATA
@@ -233,6 +235,13 @@ export default function SweetieWorldApp() {
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(DEFAULT_CONFIG);
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [adminLogs, setAdminLogs] = useState<AdminLogData[]>([]);
+
+  // NEW: Movie Views States
+  const [movieViews, setMovieViews] = useState<Record<string, MovieViewData>>({});
+  const [viewStatsSearch, setViewStatsSearch] = useState('');
+  const [viewStatsDate, setViewStatsDate] = useState(new Date().toISOString().split('T')[0]);
+  const [viewStatsPage, setViewStatsPage] = useState(1);
+  const [viewStatsPerPage, setViewStatsPerPage] = useState(10);
   
   // USER / AUTH STATES
   const [currentUser, setCurrentUser] = useState<UserData | null>(null);
@@ -452,6 +461,8 @@ export default function SweetieWorldApp() {
         await fetchDoc("pointRequests", setPointRequests, []);
         await fetchDoc("notifications", setNotifications, []);
         await fetchDoc("adminLogs", setAdminLogs, []);
+	const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
+        if (mvSnap.exists() && mvSnap.data().data) { setMovieViews(mvSnap.data().data); }
         const providerSnap = await getDoc(doc(db, "SiteData", "paymentProviders"));
         if (providerSnap.exists() && providerSnap.data().data) { setPaymentProviders(providerSnap.data().data); } else { setPaymentProviders(INITIAL_PROVIDERS); }
         
@@ -506,6 +517,10 @@ export default function SweetieWorldApp() {
       if (lSnap.exists() && lSnap.data().data) {
          setAdminLogs(prev => JSON.stringify(prev) !== JSON.stringify(lSnap.data().data) ? lSnap.data().data : prev);
       }
+	const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
+      if (mvSnap.exists() && mvSnap.data().data) {
+         setMovieViews(prev => JSON.stringify(prev) !== JSON.stringify(mvSnap.data().data) ? mvSnap.data().data : prev);
+      }
     } catch(e) {
       console.error("Sync error:", e);
     } finally {
@@ -538,6 +553,7 @@ export default function SweetieWorldApp() {
   useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }); }, [adminLogs, isInitialLoad, isDataFetched]);
   useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }); }, [paymentProviders, isInitialLoad, isDataFetched]);
   useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }); }, [siteConfig, isInitialLoad, isDataFetched]);
+useEffect(() => { if (!isInitialLoad && isDataFetched && !isSyncing.current) setDoc(doc(db, "SiteData", "movieViews"), { data: movieViews }); }, [movieViews, isInitialLoad, isDataFetched]);
 
   // NEW: Direct Link ဖြင့် ဝင်လာပါက ဇာတ်ကားကို အလိုလို ဖွင့်ပေးမည်
   useEffect(() => {
@@ -554,6 +570,23 @@ export default function SweetieWorldApp() {
   }, [shows]);
   // ==========================================
   // 4. ACTION HANDLERS
+	const trackMovieView = (showId: string) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const localKey = `viewed_${showId}_${todayStr}`;
+    // LocalStorage မှာ မရှိမှသာ View 1 ခါတက်မည် (Limit ကျော်ခြင်းမှ ကာကွယ်ရန်)
+    if (!localStorage.getItem(localKey)) {
+       localStorage.setItem(localKey, 'true');
+       setMovieViews(prev => {
+          const existing = prev[showId] || { total: 0, dates: {}, lastViewed: '' };
+          const newDates = { ...existing.dates };
+          newDates[todayStr] = (newDates[todayStr] || 0) + 1;
+          return {
+             ...prev,
+             [showId]: { total: existing.total + 1, dates: newDates, lastViewed: new Date().toISOString() }
+          };
+       });
+    }
+  };
   // ==========================================
   const handleGetTelegramLink = async (channelId: string) => {
     if (!channelId) return showToast("Channel ID မရှိပါ။ Admin သို့ဆက်သွယ်ပါ။");
@@ -1561,6 +1594,69 @@ export default function SweetieWorldApp() {
                      </div>
                    );
                 })()}
+		{/* NEW MOVIE VIEW STATS TABLE */}
+                        <div className="bg-[#1f1f1f] p-5 rounded-2xl border border-zinc-800 shadow-xl overflow-x-auto mt-6">
+                           <h4 className="text-lg font-black text-[#fcd385] mb-4 flex items-center gap-2"><Eye className="w-5 h-5"/> ဇာတ်ကား ကြည့်ရှုမှု မှတ်တမ်းများ (Movie View Stats)</h4>
+                           
+                           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                              <div className="relative w-full sm:w-72">
+                                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                 <input type="text" placeholder="Search Movie..." value={viewStatsSearch} onChange={e => {setViewStatsSearch(e.target.value); setViewStatsPage(1);}} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" />
+                              </div>
+                              <div className="flex items-center gap-2 bg-black border border-zinc-700 px-3 py-2 rounded-lg">
+                                 <Calendar className="w-4 h-4 text-zinc-400"/>
+                                 <input type="date" value={viewStatsDate} onChange={e => {setViewStatsDate(e.target.value); setViewStatsPage(1);}} className="bg-transparent text-xs text-white focus:outline-none outline-none cursor-pointer" />
+                              </div>
+                           </div>
+
+                           <table className="w-full text-left text-sm text-zinc-300 min-w-[700px]">
+                              <thead className="text-[10px] uppercase bg-black/60 text-zinc-400 border-b border-zinc-800">
+                                 <tr>
+                                    <th className="px-4 py-3">Movie Title</th>
+                                    <th className="px-4 py-3 text-right">Views ({viewStatsDate === new Date().toISOString().split('T')[0] ? 'Today' : viewStatsDate})</th>
+                                    <th className="px-4 py-3 text-right">Total Views</th>
+                                    <th className="px-4 py-3 text-right">Last Viewed</th>
+                                 </tr>
+                              </thead>
+                              <tbody>
+                                 {(() => {
+                                    const viewStatsArray = shows.map(s => {
+                                       const stats = movieViews[s.id] || { total: 0, dates: {}, lastViewed: '' };
+                                       return {
+                                          id: s.id,
+                                          title: s.title_en || s.title_mm,
+                                          targetDateViews: stats.dates[viewStatsDate] || 0,
+                                          totalViews: stats.total,
+                                          lastViewed: stats.lastViewed
+                                       };
+                                    });
+
+                                    const filteredViewStats = viewStatsArray
+                                       .filter(s => s.title.toLowerCase().includes(viewStatsSearch.toLowerCase()))
+                                       .sort((a, b) => {
+                                           if (b.targetDateViews !== a.targetDateViews) return b.targetDateViews - a.targetDateViews;
+                                           if (b.totalViews !== a.totalViews) return b.totalViews - a.totalViews;
+                                           return new Date(b.lastViewed || 0).getTime() - new Date(a.lastViewed || 0).getTime();
+                                       });
+
+                                    const paginatedViewStats = filteredViewStats.slice((viewStatsPage - 1) * viewStatsPerPage, viewStatsPage * viewStatsPerPage);
+
+                                    if (paginatedViewStats.length === 0) return <tr><td colSpan={4} className="text-center py-8 text-zinc-500 text-sm">No records found.</td></tr>;
+
+                                    return paginatedViewStats.map(stat => (
+                                       <tr key={stat.id} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
+                                          <td className="px-4 py-3 font-bold text-white truncate max-w-[200px]">{stat.title}</td>
+                                          <td className="px-4 py-3 text-right font-black text-emerald-400">{stat.targetDateViews.toLocaleString()}</td>
+                                          <td className="px-4 py-3 text-right font-black text-[#fcd385]">{stat.totalViews.toLocaleString()}</td>
+                                          <td className="px-4 py-3 text-right text-xs text-zinc-400">{formatDateTime(stat.lastViewed) || '-'}</td>
+                                       </tr>
+                                    ));
+                                 })()}
+                              </tbody>
+                           </table>
+                           
+                           {shows.length > 0 && renderPagination(viewStatsPage, setViewStatsPage, viewStatsPerPage, setViewStatsPerPage, shows.filter(s => (s.title_en || s.title_mm).toLowerCase().includes(viewStatsSearch.toLowerCase())).length)}
+                        </div>
               </div>
             )}
             
@@ -2816,8 +2912,9 @@ export default function SweetieWorldApp() {
                              if(isReleased) {
                                 // NEW: Link ၁ ခုတည်းဆိုရင် တန်းသွားမည်၊ ၂ ခုနှင့်အထက်မှသာ ရွေးခိုင်းမည်
                                 if (ep.links && ep.links.length === 1) {
-                                   window.open(ep.links[0].url, '_blank');
-                                } else {
+  				window.open(ep.links[0].url, '_blank');
+   				trackMovieView(selectedShow.id);
+				} else {
                                    setPlatformSelectModal({ep, show: selectedShow});
                                 }
                              } else {
@@ -2863,7 +2960,10 @@ export default function SweetieWorldApp() {
                           {selectedShow.vipTelegramLink && (
    <button 
      // ဒီနေရာလေးတွင် || '' ထည့်ပေးလိုက်ပါ 👇
-     onClick={() => handleGetTelegramLink(selectedShow.vipTelegramLink || '')}
+    onClick={() => {
+   handleGetTelegramLink(selectedShow.vipTelegramLink || '');
+   trackMovieView(selectedShow.id);
+}}
      disabled={isGeneratingTgLink}
      className="shrink-0 px-6 py-2 bg-[#fcd385] text-[#3e1717] font-black rounded-lg hover:bg-yellow-400 transition shadow-[0_0_15px_rgba(252,211,133,0.4)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
    >
@@ -3247,7 +3347,8 @@ export default function SweetieWorldApp() {
                {platformSelectModal.ep.links.map((lnk, idx) => (
                   <button key={idx} onClick={() => {
                       window.open(lnk.url, '_blank');
-                      setPlatformSelectModal(null);
+setPlatformSelectModal(null);
+trackMovieView(platformSelectModal.show.id);
                   }} className="w-full bg-black/50 border border-zinc-700 hover:border-[#fcd385] text-white font-bold py-3 rounded-xl shadow-inner hover:shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1 transition-all flex items-center justify-center gap-2">
                      {lnk.platform === 'Facebook' ? <Globe className="w-5 h-5 text-blue-500" /> : lnk.platform === 'Telegram' ? <Send className="w-5 h-5 text-blue-400" /> : lnk.platform === 'Viber' ? <MessageCircle className="w-5 h-5 text-purple-500"/> : <Play className="w-5 h-5 text-[#fcd385]" />}
                      {t.watchOn} {lnk.platform}
@@ -3492,7 +3593,8 @@ export default function SweetieWorldApp() {
 
                       // NEW LOGIC: VIP ဝင်ပြီးတာနဲ့ Telegram Private Channel ဆီ တန်းသွားမည်
                       if (vipModalShow.vipTelegramLink) {
-                         handleGetTelegramLink(vipModalShow.vipTelegramLink);
+  		 	handleGetTelegramLink(vipModalShow.vipTelegramLink);
+   			trackMovieView(vipModalShow.id);
                       } else {
                          showToast("VIP Link မထည့်ရသေးပါ။ Admin သို့ဆက်သွယ်ပါ။");
                       }
