@@ -440,48 +440,71 @@ export default function SweetieWorldApp() {
            const snap = await getDoc(doc(db, "SiteData", colName));
            if (snap.exists() && snap.data().data && snap.data().data.length > 0) { setFn(snap.data().data); } else if (defaultVal) { setFn(defaultVal); }
         };
-        const snapConfig = await getDoc(doc(db, "SiteData", "siteConfig"));
-        if (snapConfig.exists() && snapConfig.data().data) {
-            let loadedData = snapConfig.data().data;
-            if (!loadedData.socialLinks) {
-               loadedData.socialLinks = [
-                  { id: '1', platform: 'Facebook', url: loadedData.fbLink || '#', logo: '' },
-                  { id: '2', platform: 'Telegram', url: loadedData.tgLink || '#', logo: '' },
-                  { id: '3', platform: 'Viber', url: loadedData.viberLink || '#', logo: '' }
-               ];
+
+        // Data ဆွဲယူမည့် Function များကို သီးသန့်ခွဲထုတ်ခြင်း
+        const fetchConfig = async () => {
+            const snapConfig = await getDoc(doc(db, "SiteData", "siteConfig"));
+            if (snapConfig.exists() && snapConfig.data().data) {
+                let loadedData = snapConfig.data().data;
+                if (!loadedData.socialLinks) {
+                   loadedData.socialLinks = [
+                      { id: '1', platform: 'Facebook', url: loadedData.fbLink || '#', logo: '' },
+                      { id: '2', platform: 'Telegram', url: loadedData.tgLink || '#', logo: '' },
+                      { id: '3', platform: 'Viber', url: loadedData.viberLink || '#', logo: '' }
+                   ];
+                }
+                setSiteConfig(loadedData);
+            } else {
+                setSiteConfig(DEFAULT_CONFIG);
             }
-            setSiteConfig(loadedData);
-        } else {
-            setSiteConfig(DEFAULT_CONFIG);
-        }
-        await fetchDoc("users", setUsers, INITIAL_USERS);
-        const showsSnap = await getDoc(doc(db, "SiteData", "shows"));
-        if (showsSnap.exists() && showsSnap.data().data && showsSnap.data().data.length > 0) {
-           const parsedShows = showsSnap.data().data;
-           const migratedShows = parsedShows.map((s: any) => ({
-              ...s, episodes: s.episodes.map((ep: any) => ({ ...ep, links: ep.links ? ep.links : (ep.link ? [{ platform: 'Default', url: ep.link }] : []) }))
-           }));
-           setShows(migratedShows);
-        } else { setShows(INITIAL_SHOWS); }
-        await fetchDoc("categories", setCategories, INITIAL_CATEGORIES);
-        await fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS);
-        await fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: 'အကောင့်အသစ် ဖွင့်သူများအတွက် VIP ၃ ရက် အခမဲ့ရရှိမည်!' }]);
-        await fetchDoc("faqs", setFaqs, [{ id: '1', title_en: 'How to buy points?', body_en: 'Transfer via KPay or WavePay. Then submit your Transaction ID.', title_mm: 'Point ဘယ်လိုဝယ်ရမလဲ?', body_mm: 'KPay, WavePay မှ ငွေလွှဲပါ။ ပြီးလျှင် Transaction ID အား ထည့်ပေးပါ။' }]);
-        await fetchDoc("pointRequests", setPointRequests, []);
-        await fetchDoc("notifications", setNotifications, []);
-        await fetchDoc("adminLogs", setAdminLogs, []);
-	const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
-        if (mvSnap.exists() && mvSnap.data().data) { setMovieViews(mvSnap.data().data); }
-        const providerSnap = await getDoc(doc(db, "SiteData", "paymentProviders"));
-        if (providerSnap.exists() && providerSnap.data().data) { setPaymentProviders(providerSnap.data().data); } else { setPaymentProviders(INITIAL_PROVIDERS); }
+        };
+
+        const fetchShows = async () => {
+            const showsSnap = await getDoc(doc(db, "SiteData", "shows"));
+            if (showsSnap.exists() && showsSnap.data().data && showsSnap.data().data.length > 0) {
+               const parsedShows = showsSnap.data().data;
+               const migratedShows = parsedShows.map((s: any) => ({
+                  ...s, episodes: s.episodes.map((ep: any) => ({ ...ep, links: ep.links ? ep.links : (ep.link ? [{ platform: 'Default', url: ep.link }] : []) }))
+               }));
+               setShows(migratedShows);
+            } else { setShows(INITIAL_SHOWS); }
+        };
+
+        const fetchMovieViews = async () => {
+            const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
+            if (mvSnap.exists() && mvSnap.data().data) { setMovieViews(mvSnap.data().data); }
+        };
+
+        const fetchPaymentProviders = async () => {
+            const providerSnap = await getDoc(doc(db, "SiteData", "paymentProviders"));
+            if (providerSnap.exists() && providerSnap.data().data) { setPaymentProviders(providerSnap.data().data); } else { setPaymentProviders(INITIAL_PROVIDERS); }
+        };
+
+        // API Request အားလုံးကို အစဉ်လိုက်မဟုတ်ဘဲ တစ်ပြိုင်နက်တည်း (Promise.all ဖြင့်) ဆွဲယူခြင်း
+        await Promise.all([
+            fetchConfig(),
+            fetchDoc("users", setUsers, INITIAL_USERS),
+            fetchShows(),
+            fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
+            fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
+            fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: "Jbsehunjae's World မှာ ကြိုဆိုပါတယ်!" }]),
+            fetchDoc("faqs", setFaqs, [{ id: '1', title_en: 'How to buy points?', body_en: 'Transfer via KPay or WavePay. Then submit your Transaction ID.', title_mm: 'Point ဘယ်လိုဝယ်ရမလဲ?', body_mm: 'KPay, WavePay မှ ငွေလွှဲပါ။ ပြီးလျှင် Transaction ID အား ထည့်ပေးပါ။' }]),
+            fetchDoc("pointRequests", setPointRequests, []),
+            fetchDoc("notifications", setNotifications, []),
+            fetchDoc("adminLogs", setAdminLogs, []),
+            fetchMovieViews(),
+            fetchPaymentProviders()
+        ]);
         
-        // NEW: Error မတက်ဘဲ အကုန်အောင်မြင်မှသာ True ပြောင်းပေးမည်
         setIsDataFetched(true); 
-      } catch(e) { console.error("Firebase fetch error", e); } finally { 
+      } catch(e) { 
+        console.error("Firebase fetch error", e); 
+      } finally { 
           setIsInitialLoad(false); 
-          isReadyToSave.current = true; // ချက်ချင်း Save လို့ရအောင် ဖွင့်ပေးလိုက်ပါသည်
+          isReadyToSave.current = true; 
       }
     };
+    
     loadData();
 
     const handleClickOutside = (event: any) => { if (notiRef.current && !notiRef.current.contains(event.target)) { setNotiDropdownOpen(false); } };
