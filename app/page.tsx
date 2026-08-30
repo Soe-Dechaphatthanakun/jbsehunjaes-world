@@ -887,33 +887,40 @@ export default function SweetieWorldApp() {
     setPayStep('history');
   };
 
-  const handleAdminSaveUser = () => {
-    if (!editUserRemark.trim() && editUserModal.mode === 'edit') return setAlertModal({ message: "လုပ်ဆောင်ရသည့် အကြောင်းရင်း (Remark) ကို ထည့်ပေးပါ။" });
-    
-    // NEW: ရိုက်ထည့်လိုက်သော Point ကို လက်ရှိ Point နှင့် အလိုလိုပေါင်းပေးမည့်စနစ်
-    const adjustment = Number(editUserForm.pointAdjustment) || 0;
-    const finalPoints = editUserForm.points + adjustment;
+  const handleAdminSaveUser = async () => {
+  if (!editUserRemark.trim() && editUserModal.mode === 'edit') return setAlertModal({ message: "လုပ်ဆောင်ရသည့် အကြောင်းရင်း (Remark) ကို ထည့်ပေးပါ။" });
+  
+  const adjustment = Number(editUserForm.pointAdjustment) || 0;
+  const finalPoints = editUserForm.points + adjustment;
 
-    // Firebase Error မတက်အောင် pointAdjustment ကို Object ထဲကနေ အပြီးတိုင် ဖယ်ထုတ်လိုက်ပါမည်
-    const { pointAdjustment, ...cleanEditUserForm } = editUserForm;
+  const { pointAdjustment, ...cleanEditUserForm } = editUserForm;
+
+  isSyncing.current = true; // Auto-sync ကို ခဏပိတ်မည်
+
+  try {
+    let updatedUsersList;
 
     if (editUserModal.mode === 'create') {
       const exists = users.find(u => u.username.toLowerCase() === editUserForm.username.trim().toLowerCase() || u.email.toLowerCase() === editUserForm.email.trim().toLowerCase());
-      if (exists) return setAlertModal({ message: t.msgExists });
+      if (exists) {
+        isSyncing.current = false;
+        return setAlertModal({ message: t.msgExists });
+      }
       const newUser = {
          ...cleanEditUserForm, 
-         points: finalPoints, // တွက်ပြီးသား Point ကို သိမ်းမည်
+         points: finalPoints,
          username: editUserForm.username.trim(), email: editUserForm.email.trim(),
          createdAt: new Date().toISOString(),
          lastLoginAt: new Date().toISOString(),
          pointHistory: []
       };
-      setUsers([newUser, ...users]);
+      updatedUsersList = [newUser, ...users];
+      setUsers(updatedUsersList);
     } else {
       const oldUser = users.find(u => u.username === editUserModal.oldUsername);
       let newPointHistory = oldUser?.pointHistory || [];
       
-      if (oldUser && finalPoints !== oldUser.points) { // ပြောင်းလဲသွားသော Point ဖြင့် စစ်ဆေးမည်
+      if (oldUser && finalPoints !== oldUser.points) { 
          const pointDiff = finalPoints - oldUser.points;
          const newLog: UserHistoryLog = {
             id: Date.now().toString(),
@@ -927,27 +934,45 @@ export default function SweetieWorldApp() {
 
       const updatedUser = {
          ...cleanEditUserForm, 
-         points: finalPoints, // တွက်ပြီးသား Point ကို သိမ်းမည်
+         points: finalPoints,
          username: editUserForm.username.trim(), 
          email: editUserForm.email.trim(),
          pointHistory: newPointHistory
       };
 
-      setUsers(users.map(u => u.username === editUserModal.oldUsername ? updatedUser : u));
+      updatedUsersList = users.map(u => u.username === editUserModal.oldUsername ? updatedUser : u);
+      setUsers(updatedUsersList);
       if(currentUser?.username === editUserModal.oldUsername) setCurrentUser(updatedUser);
       
       if(editUserRemark.trim() && currentUser) {
          const newLog: AdminLogData = { id: Date.now().toString()+'_log', adminName: currentUser.username, targetUser: editUserForm.username.trim(), action: 'Edit User Profile', remark: editUserRemark.trim(), date: new Date().toISOString() };
          const newNoti: NotificationData = { id: Date.now().toString()+'_noti', targetUser: editUserForm.username.trim(), message: `Admin မှ သင့်အကောင့်အား ပြင်ဆင်မှုပြုလုပ်ခဲ့ပါသည်။ (Admin Action)`, detail: editUserRemark.trim(), date: new Date().toISOString(), isRead: false, actionType: 'admin_edit' };
-         setAdminLogs([newLog, ...adminLogs]);
-         setNotifications([newNoti, ...notifications]);
+         
+         const updatedLogs = [newLog, ...adminLogs];
+         const updatedNotis = [newNoti, ...notifications];
+         
+         setAdminLogs(updatedLogs);
+         setNotifications(updatedNotis);
+
+         await setDoc(doc(db, "SiteData", "adminLogs"), { data: updatedLogs });
+         await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
       }
     }
+
+    // Database ပေါ် သေချာရောက်အောင် သိမ်းမည်
+    await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList });
+
     showToast(t.msgUserSaved);
     setEditUserModal({isOpen: false, mode: 'create'});
     setShowAuthPassword(false);
     setEditUserRemark('');
-  };
+
+  } catch (error) {
+    console.error("Error saving user: ", error);
+  } finally {
+    isSyncing.current = false; // Auto-sync ပြန်ဖွင့်မည်
+  }
+};
 
   const handleNotiClick = (n: NotificationData) => {
      // ၁။ Local မှာ "ဖတ်ပြီး" လို့ အရင်ပြောင်းမည်
@@ -1898,23 +1923,40 @@ export default function SweetieWorldApp() {
                             onChange={(e) => setApproveAmounts({...approveAmounts, [req.id]: Number(e.target.value)})}
                             className="w-24 bg-zinc-900 border border-zinc-700 p-2 text-sm text-white rounded-lg focus:outline-none focus:border-[#fcd385]"
                           />
-                          <button onClick={() => {
-                            const amount = approveAmounts[req.id] || req.requestedAmount || 0;
-                            if (amount <= 0) return setAlertModal({ message: "Please enter a valid amount." });
-                            
-                            const newNoti: NotificationData = {
-                              id: Date.now().toString()+'_noti', targetUser: req.username,
-                              message: `ID ${req.idCode} အတွက် Point ထည့်သွင်းပေးလိုက်ပါပြီ။`, detail: `+${amount} PTS ဖြည့်သွင်းပြီးပါပြီ။`,
-                              date: new Date().toISOString(), isRead: false, actionType: 'point_approve'
-                            };
+                          <button onClick={async () => {
+  const amount = approveAmounts[req.id] || req.requestedAmount || 0;
+  if (amount <= 0) return setAlertModal({ message: "Please enter a valid amount." });
+  
+  isSyncing.current = true; // Auto-sync ကို ခဏပိတ်မည်
+  try {
+    const newNoti: NotificationData = {
+      id: Date.now().toString()+'_noti', targetUser: req.username,
+      message: `ID ${req.idCode} အတွက် Point ထည့်သွင်းပေးလိုက်ပါပြီ။`, detail: `+${amount} PTS ဖြည့်သွင်းပြီးပါပြီ။`,
+      date: new Date().toISOString(), isRead: false, actionType: 'point_approve'
+    };
 
-                            setUsers(users.map(u => u.username === req.username ? { ...u, points: u.points + amount } : u));
-                            setPointRequests(pointRequests.map(p => p.id === req.id ? { ...p, status: 'approved', amount } : p));
-                            setNotifications([newNoti, ...notifications]);
-                            showToast(`${amount} ${t.msgApproved}`);
-                          }} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-2 rounded-lg font-bold transition flex-1 md:flex-none">
-                            {t.approveBtn}
-                          </button>
+    const updatedUsers = users.map(u => u.username === req.username ? { ...u, points: u.points + amount } : u);
+    const updatedPointReqs = pointRequests.map((p): PointRequest => p.id === req.id ? { ...p, status: 'approved', amount } : p);
+    const updatedNotis = [newNoti, ...notifications];
+
+    setUsers(updatedUsers);
+    setPointRequests(updatedPointReqs);
+    setNotifications(updatedNotis);
+
+    // Database ပေါ် သေချာရောက်အောင် သိမ်းမည်
+    await setDoc(doc(db, "SiteData", "users"), { data: updatedUsers });
+    await setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedPointReqs });
+    await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
+
+    showToast(`${amount} ${t.msgApproved}`);
+  } catch (error) {
+    console.error("Error approving points: ", error);
+  } finally {
+    isSyncing.current = false; // Auto-sync ပြန်ဖွင့်မည်
+  }
+}} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-2 rounded-lg font-bold transition flex-1 md:flex-none">
+  {t.approveBtn}
+</button>
                           
                           {/* Reject with Remark 3D Modal */}
                           <button onClick={() => {
@@ -1927,7 +1969,7 @@ export default function SweetieWorldApp() {
                                    message: `ID ${req.idCode} အတွက် ပယ်ချလိုက်ပါသည်။ Remark ကိုဖတ်ရန်နှိပ်ပါ။`, detail: reason,
                                    date: new Date().toISOString(), isRead: false, actionType: 'point_reject'
                                  };
-                                 setPointRequests(pointRequests.map(p => p.id === req.id ? { ...p, status: 'rejected', remark: reason } : p));
+                                 setPointRequests(pointRequests.map((p): PointRequest => p.id === req.id ? { ...p, status: 'rejected', remark: reason } : p));
                                  setNotifications([newNoti, ...notifications]);
                                  showToast("Request Rejected");
                                }
