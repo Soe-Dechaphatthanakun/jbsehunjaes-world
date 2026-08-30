@@ -592,18 +592,19 @@ export default function SweetieWorldApp() {
     };
   }, [isInitialLoad, currentUser?.role]);
 
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "shows"), { data: shows }); }, [shows]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "categories"), { data: categories }); }, [categories]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "platforms"), { data: platforms }); }, [platforms]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "promotions"), { data: promotions }); }, [promotions]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "faqs"), { data: faqs }); }, [faqs]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "pointRequests"), { data: pointRequests }); }, [pointRequests]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "notifications"), { data: notifications }); }, [notifications]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }); }, [adminLogs]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }); }, [paymentProviders]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }); }, [siteConfig]);
-  useEffect(() => { if (isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "movieViews"), { data: movieViews }); }, [movieViews]);
+  // Admin သာလျှင် Auto-save အလုပ်လုပ်စေရန် ပြင်ဆင်ချက် (Write Limit လေလွင့်မှု ကာကွယ်ရန်)
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "shows"), { data: shows }); }, [shows, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "categories"), { data: categories }); }, [categories, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "platforms"), { data: platforms }); }, [platforms, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "promotions"), { data: promotions }); }, [promotions, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "faqs"), { data: faqs }); }, [faqs, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "pointRequests"), { data: pointRequests }); }, [pointRequests, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "notifications"), { data: notifications }); }, [notifications, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }); }, [adminLogs, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }); }, [paymentProviders, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }); }, [siteConfig, currentUser?.role]);
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "movieViews"), { data: movieViews }); }, [movieViews, currentUser?.role]);
 
   // NEW: Direct Link ဖြင့် ဝင်လာပါက ဇာတ်ကားကို အလိုလို ဖွင့်ပေးမည်
   useEffect(() => {
@@ -621,23 +622,25 @@ export default function SweetieWorldApp() {
   // ==========================================
   // 4. ACTION HANDLERS
     const trackMovieView = (showId: string) => {
-    const d = new Date(); 
-    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const localKey = `viewed_${showId}_${todayStr}`;
-    // LocalStorage မှာ မရှိမှသာ View 1 ခါတက်မည် (Limit ကျော်ခြင်းမှ ကာကွယ်ရန်)
-    if (!localStorage.getItem(localKey)) {
-       localStorage.setItem(localKey, 'true');
-       setMovieViews(prev => {
-          const existing = prev[showId] || { total: 0, dates: {}, lastViewed: '' };
-          const newDates = { ...existing.dates };
-          newDates[todayStr] = (newDates[todayStr] || 0) + 1;
-          return {
-             ...prev,
-             [showId]: { total: existing.total + 1, dates: newDates, lastViewed: new Date().toISOString() }
-          };
-       });
-    }
-  };
+  const d = new Date(); 
+  const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const localKey = `viewed_${showId}_${todayStr}`;
+  if (!localStorage.getItem(localKey)) {
+     localStorage.setItem(localKey, 'true');
+     setMovieViews(prev => {
+        const existing = prev[showId] || { total: 0, dates: {}, lastViewed: '' };
+        const newDates = { ...existing.dates };
+        newDates[todayStr] = (newDates[todayStr] || 0) + 1;
+        const updatedViews = {
+           ...prev,
+           [showId]: { total: existing.total + 1, dates: newDates, lastViewed: new Date().toISOString() }
+        };
+        // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
+        setDoc(doc(db, "SiteData", "movieViews"), { data: updatedViews });
+        return updatedViews;
+     });
+  }
+};
   // ==========================================
   const handleGetTelegramLink = async (channelId: string) => {
     if (!channelId) return showToast("Channel ID မရှိပါ။ Admin သို့ဆက်သွယ်ပါ။");
@@ -848,44 +851,55 @@ export default function SweetieWorldApp() {
   };
 
   const handlePasswordUpdate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if(!currentUser) return;
-    if(pwdForm.old !== currentUser.password) {
-       return setAlertModal({ message: t.wrongOldPwd });
-    }
-    if(pwdForm.new !== pwdForm.confirm) {
-       return setAlertModal({ message: t.pwdMismatch });
-    }
-    const updatedUsers = users.map(u => u.username === currentUser.username ? {...u, password: pwdForm.new.trim()} : u);
-    setUsers(updatedUsers);
-    setCurrentUser({...currentUser, password: pwdForm.new.trim()});
-    showToast("Password updated successfully!");
-    setChangePwdModalOpen(false);
-    setPwdForm({ old: '', new: '', confirm: '' });
-    setShowPwdOld(false); setShowPwdNew(false); setShowPwdConfirm(false);
-  };
+  e.preventDefault();
+  if(!currentUser) return;
+  if(pwdForm.old !== currentUser.password) {
+     return setAlertModal({ message: t.wrongOldPwd });
+  }
+  if(pwdForm.new !== pwdForm.confirm) {
+     return setAlertModal({ message: t.pwdMismatch });
+  }
+  const updatedUsers = users.map(u => u.username === currentUser.username ? {...u, password: pwdForm.new.trim()} : u);
+  setUsers(updatedUsers);
+  // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
+  setDoc(doc(db, "SiteData", "users"), { data: updatedUsers });
+  setCurrentUser({...currentUser, password: pwdForm.new.trim()});
+  showToast("Password updated successfully!");
+  setChangePwdModalOpen(false);
+  setPwdForm({ old: '', new: '', confirm: '' });
+  setShowPwdOld(false); setShowPwdNew(false); setShowPwdConfirm(false);
+};
 
   const handlePointSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentUser || !selectedProvider || !idCodeInput.trim() || !amountInput.trim()) return;
-    const isDuplicate = pointRequests.some(r => r.idCode.trim().toLowerCase() === idCodeInput.trim().toLowerCase());
-    if (isDuplicate) return setAlertModal({ message: t.duplicateId });
-    const newReq: PointRequest = {
-      id: Date.now().toString(), username: currentUser.username, provider: selectedProvider.name,
-      idCode: idCodeInput.trim(), requestedAmount: Number(amountInput), date: new Date().toISOString(), status: 'pending'
-    };
-    const newNoti: NotificationData = {
-      id: Date.now().toString()+'_noti', targetUser: 'admin',
-      message: `Point Request from ${currentUser.username} (ID: ${idCodeInput.trim()}) - Amount: ${amountInput}`,
-      date: new Date().toISOString(), isRead: false, actionType: 'point_request'
-    };
-    setNotifications([newNoti, ...notifications]);
-    setPointRequests([newReq, ...pointRequests]);
-    showToast(t.msgPointSent);
-    setIdCodeInput('');
-    setAmountInput('');
-    setPayStep('history');
+  e.preventDefault();
+  if (!currentUser || !selectedProvider || !idCodeInput.trim() || !amountInput.trim()) return;
+  const isDuplicate = pointRequests.some(r => r.idCode.trim().toLowerCase() === idCodeInput.trim().toLowerCase());
+  if (isDuplicate) return setAlertModal({ message: t.duplicateId });
+  const newReq: PointRequest = {
+    id: Date.now().toString(), username: currentUser.username, provider: selectedProvider.name,
+    idCode: idCodeInput.trim(), requestedAmount: Number(amountInput), date: new Date().toISOString(), status: 'pending'
   };
+  const newNoti: NotificationData = {
+    id: Date.now().toString()+'_noti', targetUser: 'admin',
+    message: `Point Request from ${currentUser.username} (ID: ${idCodeInput.trim()}) - Amount: ${amountInput}`,
+    date: new Date().toISOString(), isRead: false, actionType: 'point_request'
+  };
+  
+  const updatedNotis = [newNoti, ...notifications];
+  const updatedReqs = [newReq, ...pointRequests];
+  
+  setNotifications(updatedNotis);
+  setPointRequests(updatedReqs);
+  
+  // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
+  setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
+  setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs });
+
+  showToast(t.msgPointSent);
+  setIdCodeInput('');
+  setAmountInput('');
+  setPayStep('history');
+};
 
   const handleAdminSaveUser = async () => {
   if (!editUserRemark.trim() && editUserModal.mode === 'edit') return setAlertModal({ message: "လုပ်ဆောင်ရသည့် အကြောင်းရင်း (Remark) ကို ထည့်ပေးပါ။" });
@@ -3766,14 +3780,17 @@ trackMovieView(platformSelectModal.show.id);
                       };
 
                       const updatedUser = {
-                         ...currentUser,
-                         points: currentUser.points - cost,
-                         unlockedShows: [...(currentUser.unlockedShows || []), vipModalShow.id],
-                         pointHistory: [newLog, ...(currentUser.pointHistory || [])]
-                      };
-                      
-                      setUsers(users.map(u => u.username === currentUser.username ? updatedUser : u));
-                      setCurrentUser(updatedUser);
+   ...currentUser,
+   points: currentUser.points - cost,
+   unlockedShows: [...(currentUser.unlockedShows || []), vipModalShow.id],
+   pointHistory: [newLog, ...(currentUser.pointHistory || [])]
+};
+
+const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
+setUsers(updatedUsersList);
+// ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
+setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
+setCurrentUser(updatedUser);
                       setVipModalShow(null);
                       showToast(t.msgVipSuccess);
 
