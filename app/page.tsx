@@ -2730,47 +2730,58 @@ export default function SweetieWorldApp() {
                       ))}
                       
                       <div className="flex gap-3 mt-6">
-                        <button onClick={() => {
-                          if(!newVideo.title_en && !newVideo.title_mm) return;
-                          const itemToSave = {
-                            id: editingShowId || `vid-${Date.now()}`, 
-                            title_en: newVideo.title_en || '', title_mm: newVideo.title_mm || '', 
-                            image: newVideo.image || 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=700',
-                            category: newVideo.category || categories[0], description: newVideo.description || '', 
-                            totalEpisodes: newVideo.totalEpisodes ?? 0, episodes: newVideo.episodes || [], 
-                            vipTelegramLink: newVideo.vipTelegramLink || '', pointsPerEp: newVideo.pointsPerEp ?? 20
-                          };
-                          if (editingShowId) {
-                            // Update လုပ်လိုက်တဲ့ ဇာတ်ကားကို လက်ရှိနေရာကနေဖယ်ပြီး အပေါ်ဆုံးသို့ ပို့ပေးရန်
-                            const updatedShows = [itemToSave, ...shows.filter(s => s.id !== editingShowId)];
-                            setShows(updatedShows);
-                            setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); // ချက်ချင်း Database ပေါ် တိုက်ရိုက်တင်မည်
-                            setEditingShowId(null);
-                          } else {
-                            const updatedShows = [itemToSave, ...shows];
-                            setShows(updatedShows);
-                            setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); // ချက်ချင်း Database ပေါ် တိုက်ရိုက်တင်မည်
-                            
-                            // --- NEW: NOTIFY ALL USERS ON NEW MOVIE ---
-                            const newTitle = itemToSave.title_mm || itemToSave.title_en;
-                            const newNoti: NotificationData = {
-                               id: Date.now().toString()+'_noti',
-                               targetUser: 'all',
-                               message: `"${newTitle}" ဇာတ်လမ်းသစ် တင်လိုက်ပါပြီ။`,
-                               date: new Date().toISOString(),
-                               isRead: false,
-                               actionType: 'new_upload'
-                            };
-                            const updatedNotis = [newNoti, ...notifications];
-                            setNotifications(updatedNotis);
-                            setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis }); // Noti ကိုပါ ချက်ချင်း Database ပေါ် တင်မည်
-                            // ------------------------------------------
-                          }
-                          showToast(t.msgUploaded); 
-                          setNewVideo({episodes:[], title_en: '', title_mm: '', vipTelegramLink: '', pointsPerEp: 20});
-                        }} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-3 rounded-lg shadow-lg hover:brightness-110 transition">
-                          {editingShowId ? t.updateBtn : t.saveBtn}
-                        </button>
+                        <button onClick={async () => {
+  if(!newVideo.title_en && !newVideo.title_mm) return;
+  const itemToSave = {
+    id: editingShowId || `vid-${Date.now()}`,
+    title_en: newVideo.title_en || '', title_mm: newVideo.title_mm || '',
+    image: newVideo.image || 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=700',
+    category: newVideo.category || categories[0], description: newVideo.description || '',
+    totalEpisodes: newVideo.totalEpisodes ?? 0, episodes: newVideo.episodes || [],
+    vipTelegramLink: newVideo.vipTelegramLink || '', pointsPerEp: newVideo.pointsPerEp ?? 20
+  };
+
+  // Save လုပ်နေစဉ်မှာ အခြား Data sync တွေ ဝင်မလာအောင် ခဏပိတ်ထားမည်
+  isSyncing.current = true; 
+
+  try {
+    if (editingShowId) {
+      const updatedShows = [itemToSave, ...shows.filter(s => s.id !== editingShowId)];
+      setShows(updatedShows);
+      // await ထည့်ပေးခြင်းဖြင့် DB ပေါ်ရောက်သည်အထိ စောင့်ပေးမည်
+      await setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); 
+      setEditingShowId(null);
+    } else {
+      const updatedShows = [itemToSave, ...shows];
+      setShows(updatedShows);
+      // await ထည့်ပေးခြင်းဖြင့် DB ပေါ်ရောက်သည်အထိ စောင့်ပေးမည်
+      await setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); 
+      
+      const newTitle = itemToSave.title_mm || itemToSave.title_en;
+      const newNoti: NotificationData = {
+         id: Date.now().toString()+'_noti',
+         targetUser: 'all',
+         message: `"${newTitle}" ဇာတ်လမ်းသစ် တင်လိုက်ပါပြီ။`,
+         date: new Date().toISOString(),
+         isRead: false,
+         actionType: 'new_upload'
+      };
+      const updatedNotis = [newNoti, ...notifications];
+      setNotifications(updatedNotis);
+      // await ထည့်ပေးခြင်းဖြင့် DB ပေါ်ရောက်သည်အထိ စောင့်ပေးမည်
+      await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis }); 
+    }
+    showToast(t.msgUploaded);
+    setNewVideo({episodes:[], title_en: '', title_mm: '', vipTelegramLink: '', pointsPerEp: 20});
+  } catch (error) {
+    console.error("Error uploading content: ", error);
+  } finally {
+    // Save ပြီးသွားရင် Auto-sync ပြန်ပွင့်သွားစေရန်
+    isSyncing.current = false; 
+  }
+}} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-3 rounded-lg shadow-lg hover:brightness-110 transition">
+  {editingShowId ? t.updateBtn : t.saveBtn}
+</button>
                         {editingShowId && (
                           <button onClick={() => {setEditingShowId(null); setNewVideo({episodes:[], title_en: '', title_mm: '', vipTelegramLink: '', pointsPerEp: 20});}} className="px-6 bg-zinc-700 text-white font-bold py-3 rounded-lg shadow-lg hover:brightness-110 transition">
                             {t.cancelBtn}
