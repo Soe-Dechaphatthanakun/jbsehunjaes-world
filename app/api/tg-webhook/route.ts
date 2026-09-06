@@ -72,13 +72,33 @@ export async function POST(request: Request) {
       // ပြင်ဆင်ပြီးသား Data ကို Database ထဲ Save ခြင်း (နှင့် အပေါ်ဆုံးသို့ ရွှေ့ခြင်း)
       if (isUpdated) {
         let updatedTitle = "";
+        let exactLabel = ""; // 🌟 Admin ပေးခဲ့သော နာမည်အမှန်ကို ဖမ်းယူမည့် နေရာ
+        
         const updatedShowIndex = shows.findIndex((s: any) => s.id.toLowerCase() === movieId.toLowerCase());
         if (updatedShowIndex !== -1) {
           updatedTitle = shows[updatedShowIndex].title_mm || shows[updatedShowIndex].title_en || 'ဇာတ်ကား';
           const updatedShow = shows.splice(updatedShowIndex, 1)[0];
+          
+          // 🌟 Array ရဲ့ Index ဟာ 0 ကနေစတဲ့အတွက် epNumber - 1 နေရာကနေ "EP 6 (Part-1)" စသည့် နာမည်အမှန်ကို လှမ်းယူပါမည် (Memory ပေါ်ကနေပဲ ယူတာဖြစ်လို့ Read Cost လုံးဝ မတက်ပါ)
+          exactLabel = updatedShow.episodes[epNumber - 1]?.epLabel || `အပိုင်း ${epNumber}`;
+          
           shows.unshift(updatedShow); // ဇာတ်ကားကို အပေါ်ဆုံးသို့ ပို့လိုက်ပါပြီ
         }
         await setDoc(showsRef, { data: shows });
+
+        // 🌟 Noti စာသား တည်ဆောက်ခြင်း 
+        let displayEp = exactLabel;
+        if (/ep/i.test(exactLabel)) {
+            // 'EP' ကို 'အပိုင်း' ဖြင့် အစားထိုးမည်။ အနောက်က ' 6 (Part-1)' သည် မပျက်ဘဲ အတိုင်းဆက်ကျန်နေမည်
+            displayEp = exactLabel.replace(/ep/i, 'အပိုင်း');
+        } else if (exactLabel.toLowerCase().includes('tailer') || exactLabel.toLowerCase().includes('trailer')) {
+            displayEp = 'Trailer';
+        }
+
+        let notiMsg = `"${updatedTitle}" ဇာတ်လမ်းရဲ့ ${displayEp} အား တင်ပေးလိုက်ပါပြီ။`;
+        if (displayEp === 'Trailer') {
+            notiMsg = `***** ဒီကားရဲ့ Trailer ကိုတင်ပေးထားပါတယ်။`;
+        }
 
         // --- NEW: SEND NOTIFICATION TO ALL USERS FOR EPISODE UPDATE ---
         const notiRef = doc(db, "SiteData", "notifications");
@@ -88,7 +108,7 @@ export async function POST(request: Request) {
            const newNoti = {
              id: Date.now().toString()+'_noti',
              targetUser: 'all',
-             message: `"${updatedTitle}" ဇာတ်လမ်းရဲ့ အပိုင်း ${epNumber} အား တင်ပေးလိုက်ပါပြီ။`,
+             message: notiMsg, // 🌟 တွက်ချက်ထားသော စာသားကို ဤနေရာတွင် ထည့်လိုက်ပါပြီ
              date: new Date().toISOString(),
              isRead: false,
              actionType: 'ep_update'
