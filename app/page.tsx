@@ -1062,10 +1062,12 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
     return logD >= fromD.getTime() && logD <= toD.getTime();
   }) : [];
 
+  const searchSafeQuery = searchQuery.toLowerCase().replace(/\s+/g, '');
   const filteredShows = shows.filter(s => {
-    // ဒီနေရာလေးမှာ Latest Releases ကိုပါ ထပ်ပေါင်းထည့်လိုက်ပါ
     const matchCat = activeCategory === 'All' || activeCategory === 'Latest Releases' || s.category === activeCategory;
-    const matchSearch = (s.title_en?.toLowerCase().includes(searchQuery.toLowerCase()) || s.title_mm?.toLowerCase().includes(searchQuery.toLowerCase()));
+    const en = (s.title_en || '').toLowerCase().replace(/\s+/g, '');
+    const mm = (s.title_mm || '').toLowerCase().replace(/\s+/g, '');
+    const matchSearch = en.includes(searchSafeQuery) || mm.includes(searchSafeQuery);
     return matchCat && matchSearch;
   });
 
@@ -1082,7 +1084,12 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
   const adminFilteredLogs = adminLogs.filter(l => l.adminName.toLowerCase().includes(adminLogSearch.toLowerCase()) || l.targetUser.toLowerCase().includes(adminLogSearch.toLowerCase()) || l.action.toLowerCase().includes(adminLogSearch.toLowerCase()));
   const paginatedLogs = adminFilteredLogs.slice((adminLogPage - 1) * adminLogPerPage, adminLogPage * adminLogPerPage);
 
-  const adminUploadedShowsFiltered = shows.filter(s => (s.title_en?.toLowerCase().includes(adminUploadedSearch.toLowerCase()) || s.title_mm?.toLowerCase().includes(adminUploadedSearch.toLowerCase())));
+  const adminUploadSafe = adminUploadedSearch.toLowerCase().replace(/\s+/g, '');
+  const adminUploadedShowsFiltered = shows.filter(s => {
+    const en = (s.title_en || '').toLowerCase().replace(/\s+/g, '');
+    const mm = (s.title_mm || '').toLowerCase().replace(/\s+/g, '');
+    return en.includes(adminUploadSafe) || mm.includes(adminUploadSafe);
+  });
   const paginatedShows = adminUploadedShowsFiltered.slice((showsPage - 1) * showsPerPage, showsPage * showsPerPage);
 
   const adminFilteredPromos = promotions.filter(p => (p.title_en?.toLowerCase().includes(adminPromoSearch.toLowerCase()) || p.title_mm?.toLowerCase().includes(adminPromoSearch.toLowerCase())));
@@ -2749,8 +2756,8 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
   <span className="text-[10px] text-zinc-400 font-bold uppercase">Auto-Link Tag (Telegram တွင်ထည့်ရန်):</span>
   {editingShowId ? (
     <code className="text-[11px] text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded font-mono select-all border border-blue-800/50">
-       #{editingShowId}_ep{idx + 1}
-    </code>
+   #{editingShowId}-ep{idx + 1}
+</code>
   ) : (
     <span className="text-[10px] text-yellow-500 italic font-bold">Save Movie First to get Tag!</span>
   )}
@@ -2797,42 +2804,51 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
     vipTelegramLink: newVideo.vipTelegramLink || '', pointsPerEp: newVideo.pointsPerEp ?? 20
   };
 
-  // Save လုပ်နေစဉ်မှာ အခြား Data sync တွေ ဝင်မလာအောင် ခဏပိတ်ထားမည်
   isSyncing.current = true; 
 
   try {
     if (editingShowId) {
       const updatedShows = [itemToSave, ...shows.filter(s => s.id !== editingShowId)];
       setShows(updatedShows);
-      // await ထည့်ပေးခြင်းဖြင့် DB ပေါ်ရောက်သည်အထိ စောင့်ပေးမည်
       await setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); 
       setEditingShowId(null);
     } else {
       const updatedShows = [itemToSave, ...shows];
       setShows(updatedShows);
-      // await ထည့်ပေးခြင်းဖြင့် DB ပေါ်ရောက်သည်အထိ စောင့်ပေးမည်
       await setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); 
       
       const newTitle = itemToSave.title_mm || itemToSave.title_en;
+      const firstEp = itemToSave.episodes && itemToSave.episodes.length > 0 ? itemToSave.episodes[0].epLabel : '';
+      
+      let notiMsg = `"${newTitle}" ဇာတ်လမ်းသစ် တင်လိုက်ပါပြီ။`;
+      if (firstEp.toLowerCase().includes('tailer') || firstEp.toLowerCase().includes('trailer')) {
+          notiMsg = `***** ဒီကားရဲ့ Trailer ကိုတင်ပေးထားပါတယ်။`;
+      } else if (firstEp) {
+          notiMsg = `"${newTitle}" ${firstEp} ကိုတင်ပေးထားပါတယ်။`;
+      }
+
       const newNoti: NotificationData = {
          id: Date.now().toString()+'_noti',
          targetUser: 'all',
-         message: `"${newTitle}" ဇာတ်လမ်းသစ် တင်လိုက်ပါပြီ။`,
+         message: notiMsg,
          date: new Date().toISOString(),
          isRead: false,
          actionType: 'new_upload'
       };
       const updatedNotis = [newNoti, ...notifications];
       setNotifications(updatedNotis);
-      // await ထည့်ပေးခြင်းဖြင့် DB ပေါ်ရောက်သည်အထိ စောင့်ပေးမည်
       await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis }); 
     }
     showToast(t.msgUploaded);
     setNewVideo({episodes:[], title_en: '', title_mm: '', vipTelegramLink: '', pointsPerEp: 20});
+    
+    // Save ပြီးသည်နှင့် Uploaded Content Tab သို့ အလိုအလျောက် ရွှေ့ပေးမည်
+    setAdminActiveTab('uploaded_content');
+    window.scrollTo({top:0, behavior: 'smooth'});
+
   } catch (error) {
     console.error("Error uploading content: ", error);
   } finally {
-    // Save ပြီးသွားရင် Auto-sync ပြန်ပွင့်သွားစေရန်
     isSyncing.current = false; 
   }
 }} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-3 rounded-lg shadow-lg hover:brightness-110 transition">

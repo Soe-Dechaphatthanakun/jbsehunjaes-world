@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     const content = post.text || post.caption || '';
     
     // 🌟 ပြင်ဆင်ချက် (၂) - vid- သာမက cw-1 ကဲ့သို့သော ID များနှင့် အကြီး/အသေး မှားရိုက်မိတာတွေကိုပါ အကုန်လက်ခံရန် (/i ကိုသုံးထားသည်) 🌟
-    const match = content.match(/#([a-zA-Z0-9_-]+)_ep(\d+)/i);
+    const match = content.match(/#([a-zA-Z0-9_-]+)-ep(\d+)/i);
     if (!match) return NextResponse.json({ success: true, msg: 'No auto-link tag found' });
 
     const movieId = match[1];
