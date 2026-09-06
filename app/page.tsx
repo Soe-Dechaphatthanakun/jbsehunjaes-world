@@ -2824,7 +2824,12 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
       if (firstEp.toLowerCase().includes('tailer') || firstEp.toLowerCase().includes('trailer')) {
           notiMsg = `***** ဒီကားရဲ့ Trailer ကိုတင်ပေးထားပါတယ်။`;
       } else if (firstEp) {
-          notiMsg = `"${newTitle}" ${firstEp} ကိုတင်ပေးထားပါတယ်။`;
+          let displayEp = firstEp;
+          // 'ep' လို့ ပါလာမှသာ 'အပိုင်း' ဟု ပြောင်းပေးမည်၊ '1080 P' စသည်တို့ဆိုလျှင် မူလအတိုင်းထားမည်
+          if (/ep/i.test(firstEp)) {
+              displayEp = firstEp.replace(/ep/i, 'အပိုင်း');
+          }
+          notiMsg = `"${newTitle}" ဇာတ်လမ်းရဲ့ ${displayEp} အား တင်ပေးလိုက်ပါပြီ။`;
       }
 
       const newNoti: NotificationData = {
