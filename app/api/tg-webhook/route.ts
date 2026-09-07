@@ -97,7 +97,7 @@ export async function POST(request: Request) {
 
         let notiMsg = `"${updatedTitle}" ဇာတ်လမ်းရဲ့ ${displayEp} အား တင်ပေးလိုက်ပါပြီ။`;
         if (displayEp === 'Trailer') {
-            notiMsg = `***** ဒီကားရဲ့ Trailer ကိုတင်ပေးထားပါတယ်။`;
+            notiMsg = `"${updatedTitle}" ဇာတ်ကားရဲ့ Trailer ကိုတင်ပေးထားပါတယ်။`;
         }
 
         // --- NEW: SEND NOTIFICATION TO ALL USERS FOR EPISODE UPDATE ---

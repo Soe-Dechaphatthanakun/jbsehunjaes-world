@@ -2822,7 +2822,7 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
       
       let notiMsg = `"${newTitle}" ဇာတ်လမ်းသစ် တင်လိုက်ပါပြီ။`;
       if (firstEp.toLowerCase().includes('tailer') || firstEp.toLowerCase().includes('trailer')) {
-          notiMsg = `***** ဒီကားရဲ့ Trailer ကိုတင်ပေးထားပါတယ်။`;
+          notiMsg = `"${newTitle}" ဇာတ်ကားရဲ့ Trailer ကိုတင်ပေးထားပါတယ်။`;
       } else if (firstEp) {
           let displayEp = firstEp;
           // 'ep' လို့ ပါလာမှသာ 'အပိုင်း' ဟု ပြောင်းပေးမည်၊ '1080 P' စသည်တို့ဆိုလျှင် မူလအတိုင်းထားမည်
