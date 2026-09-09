@@ -32,7 +32,7 @@ const db = getFirestore(app);
 // INTERFACES & TYPES
 // ------------------------------------------------------------------
 interface EpLink { platform: string; url: string; }
-interface EpisodeData { epLabel: string; links: EpLink[]; releaseDateRaw?: string; releaseDate: string; }
+interface EpisodeData { epLabel: string; links: EpLink[]; releaseDateRaw?: string; releaseDate: string; isVipOnly?: boolean; }
 interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; }
 
 // History tracking for usage and admin bonuses
@@ -2743,6 +2743,15 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
                               </div>
                             </div>
 
+                            <label className="flex items-center gap-1.5 cursor-pointer bg-purple-900/30 border border-purple-500/50 px-3 py-2 rounded">
+                               <input type="checkbox" checked={ep.isVipOnly || false} onChange={e => {
+                                   const eps = [...newVideo.episodes!];
+                                   eps[idx].isVipOnly = e.target.checked;
+                                   setNewVideo({...newVideo, episodes: eps});
+                               }} className="accent-purple-500 w-3 h-3 cursor-pointer" />
+                               <span className="text-purple-300 text-[10px] font-bold uppercase">VIP Only</span>
+                            </label>
+
                             <button onClick={() => {
     const eps = [...newVideo.episodes!];
     if(!eps[idx].links) eps[idx].links = [];
@@ -3116,27 +3125,35 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
                  <h3 className="text-lg font-bold text-white mb-4 border-l-4 border-[#fcd385] pl-3">{t.episodes}</h3>
                  
                  {/* RECREATED EXACT EPISODE GRID FROM SCREENSHOT */}
-                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+			<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                    {selectedShow.episodes.map((ep, idx) => {
                       const isReleased = ep.links && ep.links.length > 0;
                       const isVipUnlocked = currentUser?.unlockedShows?.includes(selectedShow.id);
+                      const isVipOnly = ep.isVipOnly;
+                      
+                      const showAsAvailable = isReleased && (!isVipOnly || isVipUnlocked);
+
                       return (
                         <div key={idx} className="flex flex-col gap-1">
                           <button onClick={() => {
-                             // User အကောင့်မဝင်ထားရင် Login Box ကို အရင်ပြမည်
                              if (!currentUser) {
                                 setAuthMode('login');
                                 setAuthModalOpen(true);
-                                return; // အောက်က Code တွေကို ဆက်မလုပ်အောင် တားထားမည်
+                                return;
+                             }
+
+                             // VIP Only ဖြစ်ပြီး VIP မဝင်ရသေးရင် VIP ဝယ်ခိုင်းမည်
+                             if (isVipOnly && !isVipUnlocked) {
+                                setVipModalShow(selectedShow);
+                                return;
                              }
 
                              if(isReleased) {
-                                // NEW: Link ၁ ခုတည်းဆိုရင် တန်းသွားမည်၊ ၂ ခုနှင့်အထက်မှသာ ရွေးခိုင်းမည်
                                 if (ep.links && ep.links.length === 1) {
-  				window.open(ep.links[0].url, '_blank');
-   				trackMovieView(selectedShow.id);
-				} else {
-                                   setPlatformSelectModal({ep, show: selectedShow});
+                                  window.open(ep.links[0].url, '_blank');
+                                  trackMovieView(selectedShow.id);
+                                } else {
+                                  setPlatformSelectModal({ep, show: selectedShow});
                                 }
                              } else {
                                 if (isVipUnlocked) {
@@ -3149,14 +3166,14 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
                                    setScheduleAlert({isOpen: true, date: ep.releaseDate, show: selectedShow});
                                 }
                              }
-                          }} className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition ${isReleased ? 'bg-[#1a1a1a] border-[#fcd385]/20 hover:border-[#fcd385]/50 text-white' : 'bg-[#1a1a1a] border-zinc-800 text-zinc-300 hover:bg-black/80'}`}>
+                          }} className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition ${showAsAvailable ? 'bg-[#1a1a1a] border-[#fcd385]/20 hover:border-[#fcd385]/50 text-white' : 'bg-[#1a1a1a] border-zinc-800 text-zinc-300 hover:bg-black/80'}`}>
                              <span className="font-bold text-sm text-white mb-1">{ep.epLabel}</span>
                              
-                             <div className={`text-xs px-3 py-1.5 rounded-md font-bold w-full text-center ${isReleased ? 'bg-[#3e0a0a] text-red-200' : isVipUnlocked ? 'bg-[#fcd385]/20 text-[#fcd385]' : 'bg-black/50 text-zinc-500'}`}>
-                                {isReleased ? t.watchBtn : isVipUnlocked ? (lang === 'en' ? 'Watch VIP' : 'VIP ကြည့်ရန်') : t.waitBtn}
+                             <div className={`text-xs px-3 py-1.5 rounded-md font-bold w-full text-center ${showAsAvailable ? 'bg-[#3e0a0a] text-red-200' : isVipUnlocked ? 'bg-[#fcd385]/20 text-[#fcd385]' : (isVipOnly ? 'bg-purple-900/50 text-purple-400' : 'bg-black/50 text-zinc-500')}`}>
+                                {showAsAvailable ? t.watchBtn : isVipUnlocked ? (lang === 'en' ? 'Watch VIP' : 'VIP ကြည့်ရန်') : (isVipOnly ? 'VIP Only' : t.waitBtn)}
                              </div>
                           </button>
-                          {!isReleased && ep.releaseDate && (
+                          {!isReleased && ep.releaseDate && !isVipOnly && (
                              <span className="text-[10px] text-zinc-500 text-center mt-1">{ep.releaseDate}</span>
                           )}
                         </div>
