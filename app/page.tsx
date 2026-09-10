@@ -33,13 +33,13 @@ const db = getFirestore(app);
 // ------------------------------------------------------------------
 interface EpLink { platform: string; url: string; }
 interface EpisodeData { epLabel: string; links: EpLink[]; releaseDateRaw?: string; releaseDate: string; isVipOnly?: boolean; }
-interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; }
+interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; seriesType?: 'long' | 'mini'; }
 
 // History tracking for usage and admin bonuses
-interface UserHistoryLog { id: string; type: 'usage' | 'admin_bonus' | 'buy_vip'; title: string; amount: number; date: string; }
+interface UserHistoryLog { id: string; type: 'usage' | 'admin_bonus' | 'buy_vip' | 'buy_ep'; title: string; amount: number; date: string; }
 
 // User Data with createdAt, lastLoginAt, and pointHistory
-interface UserData { username: string; email: string; password?: string; role: 'admin' | 'user'; points: number; vip: boolean; unlockedShows: string[]; createdAt?: string; lastLoginAt?: string; pointHistory?: UserHistoryLog[]; pointAdjustment?: number | string; }
+interface UserData { username: string; email: string; password?: string; role: 'admin' | 'user'; points: number; vip: boolean; unlockedShows: string[]; unlockedEpisodes?: string[]; createdAt?: string; lastLoginAt?: string; pointHistory?: UserHistoryLog[]; pointAdjustment?: number | string; }
 
 interface PointRequest { id: string; username: string; idCode: string; provider: string; date: string; status: 'pending' | 'approved' | 'rejected'; amount?: number; requestedAmount?: number; remark?: string; }
 interface ContentItem { id: string; title_en: string; body_en: string; title_mm: string; body_mm: string; }
@@ -298,6 +298,7 @@ export default function SweetieWorldApp() {
 
   // CONTENT STATES
   const [selectedShow, setSelectedShow] = useState<VideoCardData | null>(null);
+  const [miniVipModalShow, setMiniVipModalShow] = useState<{show: VideoCardData, ep: EpisodeData, epIndex: number} | null>(null);
   const [vipModalShow, setVipModalShow] = useState<VideoCardData | null>(null);
   const [scheduleAlert, setScheduleAlert] = useState<{isOpen: boolean, date: string, show: VideoCardData} | null>(null);
   const [platformSelectModal, setPlatformSelectModal] = useState<{ep: EpisodeData, show: VideoCardData} | null>(null);
@@ -2644,8 +2645,15 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
                       </select>
                     </div>
                     <div>
+                      <label className="block text-zinc-400 mb-1.5">Series Type (ကားအမျိုးအစား)</label>
+                      <select value={newVideo.seriesType || 'long'} onChange={e => setNewVideo({...newVideo, seriesType: e.target.value as 'long'|'mini'})} className="w-full bg-black border border-zinc-700 p-3 rounded-lg text-white outline-none">
+                        <option value="long">Long Series (Channel ထဲ ထည့်မည်)</option>
+                        <option value="mini">Mini Series (တစ်ပိုင်းချင်း Bot ဖြင့်ပို့မည်)</option>
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-[#fcd385] mb-1.5 font-bold flex items-center gap-1"><Lock className="w-3 h-3"/> {t.tgLinkPlaceholder}</label>
-                      <input type="text" placeholder="https://t.me/..." value={newVideo.vipTelegramLink || ''} onChange={e => setNewVideo({...newVideo, vipTelegramLink: e.target.value})} className="w-full bg-black border border-zinc-700 p-3 rounded-lg text-white focus:outline-none focus:border-[#fcd385]" />
+                      <input type="text" placeholder="https://t.me/..." value={newVideo.vipTelegramLink || ''} onChange={e => setNewVideo({...newVideo, vipTelegramLink: e.target.value})} className="w-full bg-black border border-zinc-700 p-3 rounded-lg text-white focus:outline-none focus:border-[#fcd385]" disabled={newVideo.seriesType === 'mini'} />
                     </div>
                     
                     <div>
@@ -2810,7 +2818,7 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
     image: newVideo.image || 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=700',
     category: newVideo.category || categories[0], description: newVideo.description || '',
     totalEpisodes: newVideo.totalEpisodes ?? 0, episodes: newVideo.episodes || [],
-    vipTelegramLink: newVideo.vipTelegramLink || '', pointsPerEp: newVideo.pointsPerEp ?? 20
+    vipTelegramLink: newVideo.vipTelegramLink || '', seriesType: newVideo.seriesType || 'long', pointsPerEp: newVideo.pointsPerEp ?? 20
   };
 
   isSyncing.current = true; 
@@ -3128,60 +3136,62 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
 			<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                    {selectedShow.episodes.map((ep, idx) => {
                       const isReleased = ep.links && ep.links.length > 0;
-                      const isVipUnlocked = currentUser?.unlockedShows?.includes(selectedShow.id);
                       const isVipOnly = ep.isVipOnly;
+                      const isLongSeries = selectedShow.seriesType !== 'mini';
                       
+                      const isVipUnlocked = isLongSeries 
+                          ? currentUser?.unlockedShows?.includes(selectedShow.id)
+                          : currentUser?.unlockedEpisodes?.includes(`${selectedShow.id}_${idx}`);
+                          
                       const showAsAvailable = isReleased && (!isVipOnly || isVipUnlocked);
 
                       return (
                         <div key={idx} className="flex flex-col gap-1">
                           <button onClick={() => {
-                             if (!currentUser) {
-                                setAuthMode('login');
-                                setAuthModalOpen(true);
-                                return;
-                             }
+                             if (!currentUser) { setAuthMode('login'); setAuthModalOpen(true); return; }
 
-                             // VIP Only ဖြစ်ပြီး VIP မဝင်ရသေးရင် VIP ဝယ်ခိုင်းမည်
                              if (isVipOnly && !isVipUnlocked) {
-                                setVipModalShow(selectedShow);
+                                if (isLongSeries) setVipModalShow(selectedShow);
+                                else setMiniVipModalShow({show: selectedShow, ep, epIndex: idx});
                                 return;
                              }
 
                              if(isReleased) {
-                                if (ep.links && ep.links.length === 1) {
+                                if (isVipOnly && !isLongSeries && isVipUnlocked) {
+                                  // Bot ဆီသို့ DM သွားမည့် လုံခြုံရေး လမ်းကြောင်း
+                                  const payloadStr = encodeURIComponent(`${currentUser.username}:::${selectedShow.id}:::${idx}`);
+                                  const base64Url = btoa(payloadStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+                                  const botUsername = "YOUR_BOT_USERNAME"; // ⚠️ သင်၏ Telegram Bot Username ကို ဤနေရာတွင် ထည့်ပါ (ဥပမာ "sweetie_bot")
+                                  window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
+                                  trackMovieView(selectedShow.id);
+                                } else if (ep.links && ep.links.length === 1) {
                                   window.open(ep.links[0].url, '_blank');
                                   trackMovieView(selectedShow.id);
                                 } else {
                                   setPlatformSelectModal({ep, show: selectedShow});
                                 }
                              } else {
-                                if (isVipUnlocked) {
-                                   if (selectedShow.vipTelegramLink) {
-                                      handleGetTelegramLink(selectedShow.vipTelegramLink || '');
-                                   } else {
-                                      showToast("VIP Link not provided yet.");
-                                   }
+                                if (isLongSeries && isVipUnlocked) {
+                                   if (selectedShow.vipTelegramLink) handleGetTelegramLink(selectedShow.vipTelegramLink);
+                                   else showToast("VIP Link not provided yet.");
                                 } else {
                                    setScheduleAlert({isOpen: true, date: ep.releaseDate, show: selectedShow});
                                 }
                              }
                           }} className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition ${showAsAvailable ? 'bg-[#1a1a1a] border-[#fcd385]/20 hover:border-[#fcd385]/50 text-white' : 'bg-[#1a1a1a] border-zinc-800 text-zinc-300 hover:bg-black/80'}`}>
                              <span className="font-bold text-sm text-white mb-1">{ep.epLabel}</span>
-                             
                              <div className={`text-xs px-3 py-1.5 rounded-md font-bold w-full text-center ${showAsAvailable ? 'bg-[#3e0a0a] text-red-200' : isVipUnlocked ? 'bg-[#fcd385]/20 text-[#fcd385]' : (isVipOnly ? 'bg-purple-900/50 text-purple-400' : 'bg-black/50 text-zinc-500')}`}>
-                                {showAsAvailable ? t.watchBtn : isVipUnlocked ? (lang === 'en' ? 'Watch VIP' : 'VIP ကြည့်ရန်') : (isVipOnly ? 'VIP Only' : t.waitBtn)}
+                                {showAsAvailable ? (isVipOnly && !isLongSeries ? 'Get via Bot' : t.watchBtn) : isVipUnlocked ? (lang === 'en' ? 'Watch VIP' : 'VIP ကြည့်ရန်') : (isVipOnly ? (!isLongSeries ? `Buy (${selectedShow.pointsPerEp} PTS)` : 'VIP Only') : t.waitBtn)}
                              </div>
                           </button>
-                          {!isReleased && ep.releaseDate && !isVipOnly && (
-                             <span className="text-[10px] text-zinc-500 text-center mt-1">{ep.releaseDate}</span>
-                          )}
+                          {!isReleased && ep.releaseDate && !isVipOnly && <span className="text-[10px] text-zinc-500 text-center mt-1">{ep.releaseDate}</span>}
                         </div>
                       )
                    })}
                  </div>
 
                  {/* VIP BANNER SECTION FROM SCREENSHOT */}
+                 {selectedShow.seriesType !== 'mini' && (
                  <div className="mt-8 pt-6 border-t border-zinc-800">
                     {selectedShow.totalEpisodes === 0 ? (
                        <div className="p-4 rounded-xl border border-zinc-800 bg-black/50 text-center shadow-inner">
@@ -3196,24 +3206,10 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
                             <p className="text-zinc-300 text-xs sm:text-sm mt-1">{t.vipUnlockedDesc}</p>
                           </div>
                           {selectedShow.vipTelegramLink && (
-   <button 
-     // ဒီနေရာလေးတွင် || '' ထည့်ပေးလိုက်ပါ 👇
-    onClick={() => {
-   handleGetTelegramLink(selectedShow.vipTelegramLink || '');
-   trackMovieView(selectedShow.id);
-}}
-     disabled={isGeneratingTgLink}
-     className="shrink-0 px-6 py-2 bg-[#fcd385] text-[#3e1717] font-black rounded-lg hover:bg-yellow-400 transition shadow-[0_0_15px_rgba(252,211,133,0.4)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-   >
-      {isGeneratingTgLink ? (
-        <>
-          <span className="w-4 h-4 border-2 border-[#3e1717] border-t-transparent rounded-full animate-spin"></span> Loading...
-        </>
-      ) : (
-        "Watch on Telegram"
-      )}
-   </button>
-)}
+                             <button onClick={() => { handleGetTelegramLink(selectedShow.vipTelegramLink || ''); trackMovieView(selectedShow.id); }} disabled={isGeneratingTgLink} className="shrink-0 px-6 py-2 bg-[#fcd385] text-[#3e1717] font-black rounded-lg hover:bg-yellow-400 transition shadow-[0_0_15px_rgba(252,211,133,0.4)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                                {isGeneratingTgLink ? ( <><span className="w-4 h-4 border-2 border-[#3e1717] border-t-transparent rounded-full animate-spin"></span> Loading...</> ) : ( "Watch on Telegram" )}
+                             </button>
+                          )}
                        </div>
                     ) : getRequiredPoints(selectedShow) > 0 ? (
                        <div className="p-4 rounded-xl border border-red-900/50 bg-gradient-to-r from-[#2b0303] to-[#1a0101] flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -3231,6 +3227,7 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
                        </div>
                     )}
                  </div>
+                 )}
 
               </div>
            </div>
@@ -3860,6 +3857,66 @@ setCurrentUser(updatedUser);
                  {t.loginBtn}
               </button>
             )}
+          </div>
+        </div>
+      )}
+	
+	{/* NEW MINI SERIES PAYMENT MODAL (Pay-Per-Ep) */}
+      {miniVipModalShow && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md font-sans">
+          <div className="bg-gradient-to-b from-[#2b0303] to-[#161616] border border-purple-500/30 rounded-2xl w-full max-w-sm p-6 relative shadow-[0_20px_50px_rgba(0,0,0,0.9)]">
+            <button onClick={() => setMiniVipModalShow(null)} className="absolute top-4 right-4 text-white/50 hover:text-white"><X className="w-5 h-5"/></button>
+            <div className="w-16 h-16 rounded-full bg-purple-900/30 flex items-center justify-center mx-auto mb-4 border border-purple-500/30 shadow-inner">
+               <Lock className="w-8 h-8 text-purple-400" />
+            </div>
+            <h3 className="text-xl font-black text-white mb-2 text-center">{miniVipModalShow.ep.epLabel} ကို ဝယ်ယူမည်</h3>
+            <p className="text-sm text-zinc-400 mb-6 text-center">ဤအပိုင်းအား Telegram Bot မှတစ်ဆင့် တိုက်ရိုက်ပေးပို့သွားမည်ဖြစ်သည်။ (Download ခွင့်မပြုပါ)</p>
+            
+            <div className="bg-black/50 border border-zinc-800 rounded-xl p-4 mb-6">
+               <div className="flex justify-between items-center mb-2">
+                  <span className="text-zinc-400 text-sm">{t.required}</span>
+                  <span className="text-purple-400 font-black">{miniVipModalShow.show.pointsPerEp} {t.pts}</span>
+               </div>
+               <div className="flex justify-between items-center border-t border-zinc-800 pt-2">
+                  <span className="text-zinc-400 text-sm">{t.balance}</span>
+                  <span className={`${(currentUser?.points || 0) >= miniVipModalShow.show.pointsPerEp ? 'text-emerald-400' : 'text-red-400'} font-black`}>
+                     {currentUser?.points || 0} {t.pts}
+                  </span>
+               </div>
+            </div>
+
+            {currentUser ? (
+              <div className="flex gap-3">
+                <button onClick={() => setMiniVipModalShow(null)} className="flex-1 bg-zinc-800 text-white font-bold py-3 rounded-xl transition-all">{t.cancelBtn}</button>
+                <button onClick={() => {
+                   const cost = miniVipModalShow.show.pointsPerEp;
+                   if (currentUser.points >= cost) {
+                      const newLog: UserHistoryLog = { id: Date.now().toString(), type: 'buy_ep', title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`, amount: -cost, date: new Date().toISOString() };
+                      const updatedUser = {
+                         ...currentUser, points: currentUser.points - cost,
+                         unlockedEpisodes: [...(currentUser.unlockedEpisodes || []), `${miniVipModalShow.show.id}_${miniVipModalShow.epIndex}`],
+                         pointHistory: [newLog, ...(currentUser.pointHistory || [])]
+                      };
+                      const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
+                      setUsers(updatedUsersList);
+                      setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
+                      setCurrentUser(updatedUser);
+                      setMiniVipModalShow(null);
+                      showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
+                      
+                      const payloadStr = encodeURIComponent(`${currentUser.username}:::${miniVipModalShow.show.id}:::${miniVipModalShow.epIndex}`);
+                      const base64Url = btoa(payloadStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+                      const botUsername = "YOUR_BOT_USERNAME"; // ⚠️ သင်၏ Telegram Bot Username
+                      window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
+                   } else {
+                      setMiniVipModalShow(null);
+                      setAlertModal({ message: `${t.msgNotEnough}${cost} PTS`, actionText: lang === 'en' ? 'Click to Buy Points' : 'Point ဝယ်ရန်နှိပ်ပါ', onAction: () => { setAlertModal(null); setPayStep('providers'); setPointModalOpen(true); } });
+                   }
+                }} className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+                   <Unlock className="w-4 h-4"/> ဝယ်ယူမည်
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
