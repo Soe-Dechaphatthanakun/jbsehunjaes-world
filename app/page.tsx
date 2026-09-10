@@ -3161,7 +3161,7 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
                                   // Bot ဆီသို့ DM သွားမည့် လုံခြုံရေး လမ်းကြောင်း
                                   const payloadStr = encodeURIComponent(`${currentUser.username}:::${selectedShow.id}:::${idx}`);
                                   const base64Url = btoa(payloadStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-                                  const botUsername = "YOUR_BOT_USERNAME"; // ⚠️ သင်၏ Telegram Bot Username ကို ဤနေရာတွင် ထည့်ပါ (ဥပမာ "sweetie_bot")
+                                  const botUsername = "Jbsehunjae_vip_bot"; // ⚠️ သင်၏ Telegram Bot Username ကို ဤနေရာတွင် ထည့်ပါ (ဥပမာ "sweetie_bot")
                                   window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
                                   trackMovieView(selectedShow.id);
                                 } else if (ep.links && ep.links.length === 1) {
@@ -3906,7 +3906,7 @@ setCurrentUser(updatedUser);
                       
                       const payloadStr = encodeURIComponent(`${currentUser.username}:::${miniVipModalShow.show.id}:::${miniVipModalShow.epIndex}`);
                       const base64Url = btoa(payloadStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-                      const botUsername = "YOUR_BOT_USERNAME"; // ⚠️ သင်၏ Telegram Bot Username
+                      const botUsername = "Jbsehunjae_vip_bot"; // ⚠️ သင်၏ Telegram Bot Username
                       window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
                    } else {
                       setMiniVipModalShow(null);
