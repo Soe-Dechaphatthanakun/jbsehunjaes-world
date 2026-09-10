@@ -3181,7 +3181,7 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
                           }} className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition ${showAsAvailable ? 'bg-[#1a1a1a] border-[#fcd385]/20 hover:border-[#fcd385]/50 text-white' : 'bg-[#1a1a1a] border-zinc-800 text-zinc-300 hover:bg-black/80'}`}>
                              <span className="font-bold text-sm text-white mb-1">{ep.epLabel}</span>
                              <div className={`text-xs px-3 py-1.5 rounded-md font-bold w-full text-center ${showAsAvailable ? 'bg-[#3e0a0a] text-red-200' : isVipUnlocked ? 'bg-[#fcd385]/20 text-[#fcd385]' : (isVipOnly ? 'bg-purple-900/50 text-purple-400' : 'bg-black/50 text-zinc-500')}`}>
-                                {showAsAvailable ? (isVipOnly && !isLongSeries ? 'Get via Bot' : t.watchBtn) : isVipUnlocked ? (lang === 'en' ? 'Watch VIP' : 'VIP ကြည့်ရန်') : (isVipOnly ? (!isLongSeries ? `Buy (${selectedShow.pointsPerEp} PTS)` : 'VIP Only') : t.waitBtn)}
+                                {showAsAvailable ? (isVipOnly && !isLongSeries ? 'Get via Bot' : t.watchBtn) : isVipUnlocked ? (lang === 'en' ? 'Watch VIP' : 'VIP ကြည့်ရန်') : (isVipOnly ? (!isLongSeries ? `VIP Only (${selectedShow.pointsPerEp} PTS)` : 'VIP Only') : t.waitBtn)}
                              </div>
                           </button>
                           {!isReleased && ep.releaseDate && !isVipOnly && <span className="text-[10px] text-zinc-500 text-center mt-1">{ep.releaseDate}</span>}
