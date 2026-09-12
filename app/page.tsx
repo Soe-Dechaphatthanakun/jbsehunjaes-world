@@ -782,22 +782,22 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
     e.preventDefault();
     setAuthError('');
 
+    let latestUsers = users; // Default အနေနဲ့ Website ပွင့်ကတည်းက ရထားတဲ့ Local Data ကိုသုံးမည်
+
+    // ၁။ Firebase ကနေ နောက်ဆုံး Data လှမ်းဆွဲမည် (Error တက်ရင် Login မပျက်သွားအောင် သီးသန့် try-catch ခွဲထုတ်ထားသည်)
     try {
-      // --- NEW: Database မှ နောက်ဆုံး Users စာရင်းကို အရင်ဆွဲယူမည် (အကောင့်ပျောက်ခြင်းမှ ကာကွယ်ရန်) ---
       const uSnap = await getDoc(doc(db, "SiteData", "users"));
-      let latestUsers = users;
-      if (uSnap.exists() && uSnap.data().data) {
+      if (uSnap.exists() && Array.isArray(uSnap.data().data)) {
          latestUsers = uSnap.data().data;
       }
-      
-      // --- ထပ်ဖြည့်ရန်: Point Request History ကိုပါ နောက်ဆုံးဟာ လှမ်းဆွဲမည် ---
-      const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
-      if (pSnap.exists() && pSnap.data().data) {
-         setPointRequests(pSnap.data().data);
-      }
+    } catch (fetchError) {
+      console.warn("Firebase Fetch Error (Using local state): ", fetchError);
+      // Fetch fail ဖြစ်ခဲ့ရင်တောင် latestUsers ဟာ local 'users' အတိုင်းရှိနေမှာဖြစ်လို့ Login ဆက်ဝင်လို့ရပါမယ်။
+    }
 
+    // ၂။ Login / Register လုပ်ငန်းစဉ်များ
+    try {
       if (authMode === 'register') {
-        // ပြင်ဆင်ချက် - ?. (Optional Chaining) ထည့်သွင်းထားသည်
         const exists = latestUsers.find(u => u.username?.toLowerCase() === authForm.username.trim().toLowerCase() || u.email?.toLowerCase() === authForm.email.trim().toLowerCase());
         
         if (exists) return setAuthError(t.msgExists);
@@ -810,25 +810,17 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
         };
 
         const newNoti: NotificationData = {
-          id: Date.now().toString()+'_noti', 
-          targetUser: 'admin',
-          message: `New User Registered: ${newUser.username}`, 
-          detail: `Email: ${newUser.email}`,
-          date: new Date().toISOString(), 
-          isRead: false, 
-          actionType: 'new_user'
+          id: Date.now().toString()+'_noti', targetUser: 'admin',
+          message: `New User Registered: ${newUser.username}`, detail: `Email: ${newUser.email}`,
+          date: new Date().toISOString(), isRead: false, actionType: 'new_user'
         };
         setNotifications([newNoti, ...notifications]);
 
         const updatedUsersList = [newUser, ...latestUsers];
         setUsers(updatedUsersList);
         
-        // ပြင်ဆင်ချက် - Write Error တက်ပါက App မ Crash စေရန် try catch ခံထားသည်
-        try {
-           await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
-        } catch (dbError) {
-           console.error("Firebase saving error (User registration): ", dbError);
-        }
+        try { await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); } 
+        catch (dbError) { console.error("Firebase saving error: ", dbError); }
 
         setCurrentUser(newUser);
         if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
@@ -843,7 +835,6 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
       } else if (authMode === 'login') {
         const inputUsernameOrEmail = authForm.username.trim().toLowerCase();
         
-        // ပြင်ဆင်ချက် - ?. (Optional Chaining) ထည့်သွင်းထားသည်
         const user = latestUsers.find(u => 
           (u.username?.toLowerCase() === inputUsernameOrEmail || u.email?.toLowerCase() === inputUsernameOrEmail) && 
           u.password === authForm.password
@@ -854,12 +845,8 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
           const updatedUsersList = latestUsers.map(u => u.username === updatedUser.username ? updatedUser : u);
           setUsers(updatedUsersList);
           
-          // ပြင်ဆင်ချက် - Write Error တက်ပါက App မ Crash စေရန် try catch ခံထားသည်
-          try {
-             await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
-          } catch (dbError) {
-             console.error("Firebase saving error (Last login update): ", dbError);
-          }
+          try { await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); } 
+          catch (dbError) { console.error("Firebase saving error: ", dbError); }
 
           setCurrentUser(updatedUser);
           if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
@@ -875,7 +862,6 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
         }
         
       } else if (authMode === 'forgot') {
-        // ပြင်ဆင်ချက် - ?. (Optional Chaining) ထည့်သွင်းထားသည်
         const user = latestUsers.find(u => u.username?.toLowerCase() === authForm.username.trim().toLowerCase() && u.email?.toLowerCase() === authForm.email.trim().toLowerCase());
         if (user) {
            setAlertModal({ message: `Password: ${user.password}` });
@@ -885,8 +871,8 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
         }
       }
     } catch (error) {
-      console.error("Authentication Error: ", error);
-      setAuthError("Server Connection Error. Please try again.");
+      console.error("Authentication Runtime Error: ", error);
+      setAuthError("Runtime Error occurred. Please refresh the page.");
     }
   };
 
