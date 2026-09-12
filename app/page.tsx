@@ -16,12 +16,12 @@ import {
 // FIREBASE CONFIGURATION
 // ------------------------------------------------------------------
 const firebaseConfig = {
-  apiKey: "AIzaSyAPV7b2N4Mm7it4yY1TRSKaDw",
+  apiKey: "AIzaSyAPVvbhDa1xJ97b2N4Mm7it4yY1TRSKaDw",
   authDomain: "jbsehunjaes-world.firebaseapp.com",
   projectId: "jbsehunjaes-world",
   storageBucket: "jbsehunjaes-world.firebasestorage.app",
   messagingSenderId: "605183918160",
-  appId: "1:605183918160:web:a5a9e113fa32d155",
+  appId: "1:605183918160:web:a5a9e10af5a113fa32d155",
   measurementId: "G-YB2V92YDTS"
 };
 
@@ -479,62 +479,38 @@ export default function SweetieWorldApp() {
         };
 
         const fetchDoc = async (colName: string, setFn: any, defaultVal: any) => {
-    try {
-        const snap = await getDoc(doc(db, "SiteData", colName));
-        // 🌟 ပြင်ဆင်ချက်: .length > 0 အစား Array.isArray() ဖြင့် စစ်ဆေးခြင်း
-        if (snap.exists() && Array.isArray(snap.data().data)) { 
-            setFn(snap.data().data); 
-            return snap.data().data; 
-        } else if (defaultVal !== undefined) { 
-            setFn(defaultVal); 
-            return defaultVal; 
-        }
-        return null;
-    } catch (error) {
-        console.error(`Error fetching ${colName}:`, error);
-        // Error တက်ခဲ့လျှင် App မ Crash စေရန် defaultVal သာ သတ်မှတ်ပေးလိုက်မည်
-        if (defaultVal !== undefined) {
-            setFn(defaultVal);
-            return defaultVal;
-        }
-        return null;
-    }
-};
+           const snap = await getDoc(doc(db, "SiteData", colName));
+           if (snap.exists() && snap.data().data && snap.data().data.length > 0) { 
+               setFn(snap.data().data); return snap.data().data; 
+           } else if (defaultVal) { 
+               setFn(defaultVal); return defaultVal; 
+           }
+           return null;
+        };
 
-// ဒီအပိုင်းကို fetchData (သို့) useEffect ထဲမှာ try...catch ဖြင့် အုပ်ပေးပါ
-try {
-    // 🌟 Bandwidth Optimization (1): API Request များကို ခွဲခြား၍ ဆွဲယူခြင်း
-    const [ loadedUsers ] = await Promise.all([
-        fetchDoc("users", setUsers, INITIAL_USERS), // Users ကို အရင်ဆွဲမည်
-        // ကျန်တဲ့ Function တွေ Error တက်ရင် Promise.all တစ်ခုလုံး မကျသွားအောင် .catch ခံပေးထားပါ
-        fetchConfig().catch(e => console.error("fetchConfig error:", e)),
-        fetchShows().catch(e => console.error("fetchShows error:", e)),
-        fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
-        fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
-        fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: "Jbsehunjae's World မှာ ကြိုဆိုပါတယ်!" }]),
-        fetchDoc("faqs", setFaqs, [{ id: '1', title_en: 'How to buy points?', body_en: 'Transfer via KPay or WavePay. Then submit your Transaction ID.', title_mm: 'Point ဘယ်လိုဝယ်ရမလဲ?', body_mm: 'KPay, WavePay မှ ငွေလွှဲပါ။ ပြီးလျှင် Transaction ID အား ထည့်ပေးပါ။' }]),
-        fetchDoc("notifications", setNotifications, []),
-        fetchMovieViews().catch(e => console.error("fetchMovieViews error:", e)),
-        fetchPaymentProviders().catch(e => console.error("fetchPaymentProviders error:", e))
-    ]);
-
-    // 🌟 Bandwidth Optimization (2): 
-    const savedUser = localStorage.getItem('jbsehunjaes_auth');
-    
-    // 🌟 ပြင်ဆင်ချက်: loadedUsers သည် Array ဟုတ်မဟုတ် သေချာစစ်ဆေးပြီးမှ .find ကို သုံးပါမည်
-    const currentUserData = Array.isArray(loadedUsers) 
-        ? loadedUsers.find((u: any) => u.username === savedUser) 
-        : null;
-
-    if (currentUserData && currentUserData.role === 'admin') {
-        await Promise.all([
-            fetchDoc("pointRequests", setPointRequests, []),
-            fetchDoc("adminLogs", setAdminLogs, [])
+        // 🌟 Bandwidth Optimization (1): API Request များကို ခွဲခြား၍ ဆွဲယူခြင်း
+        const [ loadedUsers ] = await Promise.all([
+            fetchDoc("users", setUsers, INITIAL_USERS), // Users ကို အရင်ဆွဲမည်
+            fetchConfig(),
+            fetchShows(),
+            fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
+            fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
+            fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: "Jbsehunjae's World မှာ ကြိုဆိုပါတယ်!" }]),
+            fetchDoc("faqs", setFaqs, [{ id: '1', title_en: 'How to buy points?', body_en: 'Transfer via KPay or WavePay. Then submit your Transaction ID.', title_mm: 'Point ဘယ်လိုဝယ်ရမလဲ?', body_mm: 'KPay, WavePay မှ ငွေလွှဲပါ။ ပြီးလျှင် Transaction ID အား ထည့်ပေးပါ။' }]),
+            fetchDoc("notifications", setNotifications, []),
+            fetchMovieViews(),
+            fetchPaymentProviders()
         ]);
-    }
-} catch (globalError) {
-    console.error("Critical error during initial data fetch:", globalError);
-}
+
+        // 🌟 Bandwidth Optimization (2): သာမန် User များအတွက် မလိုအပ်သော Data အထုပ်ကြီးများ (Logs, Requests) ကို မဆွဲတော့ဘဲ Admin ဖြစ်မှသာ ဆွဲမည်
+        const savedUser = localStorage.getItem('jbsehunjaes_auth');
+        const currentUserData = loadedUsers ? loadedUsers.find((u: any) => u.username === savedUser) : null;
+        if (currentUserData && currentUserData.role === 'admin') {
+            await Promise.all([
+                fetchDoc("pointRequests", setPointRequests, []),
+                fetchDoc("adminLogs", setAdminLogs, [])
+            ]);
+        }
         
         setIsDataFetched(true); 
       } catch(e) { 
