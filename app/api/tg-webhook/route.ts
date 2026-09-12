@@ -27,17 +27,18 @@ export async function POST(request: Request) {
        const payload = body.message.text.split(' ')[1];
        if (payload) {
           try {
-             // Decode payload
+             // Decode payload (ချုံ့ထားသော User Hash ကို ပြန်ဖြည်ခြင်း)
              let b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
              while (b64.length % 4) b64 += '=';
-             const decodedStr = decodeURIComponent(atob(b64));
-             const [username, showId, epIndexStr] = decodedStr.split(':::');
+             const decodedStr = atob(b64);
+             const [uHash, showId, epIndexStr] = decodedStr.split(':::');
              const epIndex = parseInt(epIndexStr, 10);
 
              // Firebase မှ User အချက်အလက် စစ်ဆေးခြင်း
              const usersSnap = await getDoc(doc(db, "SiteData", "users"));
              const users = usersSnap.exists() ? usersSnap.data().data : [];
-             const user = users.find((u: any) => u.username === username);
+             const user = users.find((u: any) => new Date(u.createdAt || 0).getTime().toString(36) === uHash);
+             const username = user ? user.username : 'Unknown User';
 
              if (user && user.unlockedEpisodes && user.unlockedEpisodes.includes(`${showId}_${epIndex}`)) {
                  // User အမှန်တကယ် ဝယ်ယူထားကြောင်း အတည်ပြုပြီးပါပြီ
