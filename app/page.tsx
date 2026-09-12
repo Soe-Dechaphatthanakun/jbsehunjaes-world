@@ -437,10 +437,7 @@ export default function SweetieWorldApp() {
     setIsClient(true);
     const loadData = async () => {
       try {
-        const fetchDoc = async (colName: string, setFn: any, defaultVal: any) => {
-           const snap = await getDoc(doc(db, "SiteData", colName));
-           if (snap.exists() && snap.data().data && snap.data().data.length > 0) { setFn(snap.data().data); } else if (defaultVal) { setFn(defaultVal); }
-        };
+        
 
         // Data ဆွဲယူမည့် Function များကို သီးသန့်ခွဲထုတ်ခြင်း
         const fetchConfig = async () => {
@@ -481,21 +478,39 @@ export default function SweetieWorldApp() {
             if (providerSnap.exists() && providerSnap.data().data) { setPaymentProviders(providerSnap.data().data); } else { setPaymentProviders(INITIAL_PROVIDERS); }
         };
 
-        // API Request အားလုံးကို အစဉ်လိုက်မဟုတ်ဘဲ တစ်ပြိုင်နက်တည်း (Promise.all ဖြင့်) ဆွဲယူခြင်း
-        await Promise.all([
+        const fetchDoc = async (colName: string, setFn: any, defaultVal: any) => {
+           const snap = await getDoc(doc(db, "SiteData", colName));
+           if (snap.exists() && snap.data().data && snap.data().data.length > 0) { 
+               setFn(snap.data().data); return snap.data().data; 
+           } else if (defaultVal) { 
+               setFn(defaultVal); return defaultVal; 
+           }
+           return null;
+        };
+
+        // 🌟 Bandwidth Optimization (1): API Request များကို ခွဲခြား၍ ဆွဲယူခြင်း
+        const [ loadedUsers ] = await Promise.all([
+            fetchDoc("users", setUsers, INITIAL_USERS), // Users ကို အရင်ဆွဲမည်
             fetchConfig(),
-            fetchDoc("users", setUsers, INITIAL_USERS),
             fetchShows(),
             fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
             fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
             fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: "Jbsehunjae's World မှာ ကြိုဆိုပါတယ်!" }]),
             fetchDoc("faqs", setFaqs, [{ id: '1', title_en: 'How to buy points?', body_en: 'Transfer via KPay or WavePay. Then submit your Transaction ID.', title_mm: 'Point ဘယ်လိုဝယ်ရမလဲ?', body_mm: 'KPay, WavePay မှ ငွေလွှဲပါ။ ပြီးလျှင် Transaction ID အား ထည့်ပေးပါ။' }]),
-            fetchDoc("pointRequests", setPointRequests, []),
             fetchDoc("notifications", setNotifications, []),
-            fetchDoc("adminLogs", setAdminLogs, []),
             fetchMovieViews(),
             fetchPaymentProviders()
         ]);
+
+        // 🌟 Bandwidth Optimization (2): သာမန် User များအတွက် မလိုအပ်သော Data အထုပ်ကြီးများ (Logs, Requests) ကို မဆွဲတော့ဘဲ Admin ဖြစ်မှသာ ဆွဲမည်
+        const savedUser = localStorage.getItem('jbsehunjaes_auth');
+        const currentUserData = loadedUsers ? loadedUsers.find((u: any) => u.username === savedUser) : null;
+        if (currentUserData && currentUserData.role === 'admin') {
+            await Promise.all([
+                fetchDoc("pointRequests", setPointRequests, []),
+                fetchDoc("adminLogs", setAdminLogs, [])
+            ]);
+        }
         
         setIsDataFetched(true); 
       } catch(e) { 
@@ -767,87 +782,111 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
     e.preventDefault();
     setAuthError('');
 
-    // --- NEW: Database မှ နောက်ဆုံး Users စာရင်းကို အရင်ဆွဲယူမည် (အကောင့်ပျောက်ခြင်းမှ ကာကွယ်ရန်) ---
-    const uSnap = await getDoc(doc(db, "SiteData", "users"));
-    let latestUsers = users;
-    if (uSnap.exists() && uSnap.data().data) {
-       latestUsers = uSnap.data().data;
-    }
-    
-    // --- ထပ်ဖြည့်ရန်: Point Request History ကိုပါ နောက်ဆုံးဟာ လှမ်းဆွဲမည် ---
-    const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
-    if (pSnap.exists() && pSnap.data().data) {
-       setPointRequests(pSnap.data().data);
-    }
-
-    if (authMode === 'register') {
-      const exists = latestUsers.find(u => u.username.toLowerCase() === authForm.username.trim().toLowerCase() || u.email.toLowerCase() === authForm.email.trim().toLowerCase());
-      if (exists) return setAuthError(t.msgExists);
-      const newUser: UserData = { 
-        ...authForm, role: 'user', points: 0, vip: false, unlockedShows: [],
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-        pointHistory: []
-      };
-
-      // --- NEW: ADMIN NOTIFICATION (USER အသစ် ဝင်လာကြောင်း အသိပေးမည်) ---
-      const newNoti: NotificationData = {
-        id: Date.now().toString()+'_noti', 
-        targetUser: 'admin',
-        message: `New User Registered: ${newUser.username}`, 
-        detail: `Email: ${newUser.email}`,
-        date: new Date().toISOString(), 
-        isRead: false, 
-        actionType: 'new_user'
-      };
-      setNotifications([newNoti, ...notifications]);
-      // -----------------------------------------------------------
-
-      const updatedUsersList = [newUser, ...latestUsers];
-      setUsers(updatedUsersList); // အကောင့်သစ်ကို အပေါ်ဆုံးရောက်အောင် ပြင်ပါသည်
-      setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
-
-      setCurrentUser(newUser);
-      if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
-      else localStorage.removeItem('jbsehunjaes_auth');
-      showToast(t.msgSuccess);
-      setAuthModalOpen(false);
-      setAuthForm({ username: '', email: '', password: '' });
-      setShowAuthPassword(false);
-      setShowWelcomePromo(true);
+    try {
+      // --- NEW: Database မှ နောက်ဆုံး Users စာရင်းကို အရင်ဆွဲယူမည် (အကောင့်ပျောက်ခြင်းမှ ကာကွယ်ရန်) ---
+      const uSnap = await getDoc(doc(db, "SiteData", "users"));
+      let latestUsers = users;
+      if (uSnap.exists() && uSnap.data().data) {
+         latestUsers = uSnap.data().data;
+      }
       
-    } else if (authMode === 'login') {
-      const inputUsernameOrEmail = authForm.username.trim().toLowerCase();
-      const user = latestUsers.find(u => 
-        (u.username.toLowerCase() === inputUsernameOrEmail || u.email.toLowerCase() === inputUsernameOrEmail) && 
-        u.password === authForm.password
-      );
-      if (user) {
-        const updatedUser = { ...user, lastLoginAt: new Date().toISOString() };
-        const updatedUsersList = latestUsers.map(u => u.username === updatedUser.username ? updatedUser : u);
-        setUsers(updatedUsersList);
-        setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
+      // --- ထပ်ဖြည့်ရန်: Point Request History ကိုပါ နောက်ဆုံးဟာ လှမ်းဆွဲမည် ---
+      const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
+      if (pSnap.exists() && pSnap.data().data) {
+         setPointRequests(pSnap.data().data);
+      }
 
-        setCurrentUser(updatedUser);
-        if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
+      if (authMode === 'register') {
+        // ပြင်ဆင်ချက် - ?. (Optional Chaining) ထည့်သွင်းထားသည်
+        const exists = latestUsers.find(u => u.username?.toLowerCase() === authForm.username.trim().toLowerCase() || u.email?.toLowerCase() === authForm.email.trim().toLowerCase());
+        
+        if (exists) return setAuthError(t.msgExists);
+        
+        const newUser: UserData = { 
+          ...authForm, role: 'user', points: 0, vip: false, unlockedShows: [],
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+          pointHistory: []
+        };
+
+        const newNoti: NotificationData = {
+          id: Date.now().toString()+'_noti', 
+          targetUser: 'admin',
+          message: `New User Registered: ${newUser.username}`, 
+          detail: `Email: ${newUser.email}`,
+          date: new Date().toISOString(), 
+          isRead: false, 
+          actionType: 'new_user'
+        };
+        setNotifications([newNoti, ...notifications]);
+
+        const updatedUsersList = [newUser, ...latestUsers];
+        setUsers(updatedUsersList);
+        
+        // ပြင်ဆင်ချက် - Write Error တက်ပါက App မ Crash စေရန် try catch ခံထားသည်
+        try {
+           await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
+        } catch (dbError) {
+           console.error("Firebase saving error (User registration): ", dbError);
+        }
+
+        setCurrentUser(newUser);
+        if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
         else localStorage.removeItem('jbsehunjaes_auth');
-        showToast(t.msgLoginSucc);
+        
+        showToast(t.msgSuccess);
         setAuthModalOpen(false);
         setAuthForm({ username: '', email: '', password: '' });
         setShowAuthPassword(false);
         setShowWelcomePromo(true);
-      } else {
-        setAuthError(t.msgWrong);
+        
+      } else if (authMode === 'login') {
+        const inputUsernameOrEmail = authForm.username.trim().toLowerCase();
+        
+        // ပြင်ဆင်ချက် - ?. (Optional Chaining) ထည့်သွင်းထားသည်
+        const user = latestUsers.find(u => 
+          (u.username?.toLowerCase() === inputUsernameOrEmail || u.email?.toLowerCase() === inputUsernameOrEmail) && 
+          u.password === authForm.password
+        );
+        
+        if (user) {
+          const updatedUser = { ...user, lastLoginAt: new Date().toISOString() };
+          const updatedUsersList = latestUsers.map(u => u.username === updatedUser.username ? updatedUser : u);
+          setUsers(updatedUsersList);
+          
+          // ပြင်ဆင်ချက် - Write Error တက်ပါက App မ Crash စေရန် try catch ခံထားသည်
+          try {
+             await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
+          } catch (dbError) {
+             console.error("Firebase saving error (Last login update): ", dbError);
+          }
+
+          setCurrentUser(updatedUser);
+          if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
+          else localStorage.removeItem('jbsehunjaes_auth');
+          
+          showToast(t.msgLoginSucc);
+          setAuthModalOpen(false);
+          setAuthForm({ username: '', email: '', password: '' });
+          setShowAuthPassword(false);
+          setShowWelcomePromo(true);
+        } else {
+          setAuthError(t.msgWrong);
+        }
+        
+      } else if (authMode === 'forgot') {
+        // ပြင်ဆင်ချက် - ?. (Optional Chaining) ထည့်သွင်းထားသည်
+        const user = latestUsers.find(u => u.username?.toLowerCase() === authForm.username.trim().toLowerCase() && u.email?.toLowerCase() === authForm.email.trim().toLowerCase());
+        if (user) {
+           setAlertModal({ message: `Password: ${user.password}` });
+           setAuthMode('login');
+        } else {
+           setAuthError(t.msgWrong);
+        }
       }
-      
-    } else if (authMode === 'forgot') {
-      const user = latestUsers.find(u => u.username.toLowerCase() === authForm.username.trim().toLowerCase() && u.email.toLowerCase() === authForm.email.trim().toLowerCase());
-      if (user) {
-         setAlertModal({ message: `Password: ${user.password}` });
-         setAuthMode('login');
-      } else {
-         setAuthError(t.msgWrong);
-      }
+    } catch (error) {
+      console.error("Authentication Error: ", error);
+      setAuthError("Server Connection Error. Please try again.");
     }
   };
 
