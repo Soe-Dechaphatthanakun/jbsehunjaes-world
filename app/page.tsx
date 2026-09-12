@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteField } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
   Globe, Menu, Home, HelpCircle, Gift, Info, Send, Phone,
@@ -16,30 +16,17 @@ import {
 // FIREBASE CONFIGURATION
 // ------------------------------------------------------------------
 const firebaseConfig = {
-  apiKey: "AIzaSyAPVvbhDa1xJ97b2N4Mm7it4yY1TRSKaDw",
+  apiKey: "AIzaSyAPV7b2N4Mm7it4yY1TRSKaDw",
   authDomain: "jbsehunjaes-world.firebaseapp.com",
   projectId: "jbsehunjaes-world",
   storageBucket: "jbsehunjaes-world.firebasestorage.app",
   messagingSenderId: "605183918160",
-  appId: "1:605183918160:web:a5a9e10af5a113fa32d155",
+  appId: "1:605183918160:web:a5a9e113fa32d155",
   measurementId: "G-YB2V92YDTS"
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
-
-// --- USER UPDATE HELPER (Bandwidth သက်သာစေရန်) ---
-const updateSingleUserInDB = async (userObj: UserData, allUsers: UserData[]) => {
-  try {
-      // User ၁ ယောက်တည်းကိုသာ ရွေးပြီး Update လုပ်မည် (Bandwidth အလွန်သက်သာသည်)
-      await updateDoc(doc(db, "SiteData", "users"), { [`data.${userObj.username}`]: userObj });
-  } catch (e) {
-      // အကယ်၍ Firebase ပေါ်တွင် အဟောင်း (Array) အဖြစ် ရှိနေသေးပါက Object အသစ်အဖြစ် အလိုလိုပြောင်းသိမ်းပေးမည်
-      const usersMap: Record<string, UserData> = {};
-      allUsers.forEach(u => usersMap[u.username] = u);
-      await setDoc(doc(db, "SiteData", "users"), { data: usersMap });
-  }
-};
 
 // ------------------------------------------------------------------
 // INTERFACES & TYPES
@@ -443,58 +430,20 @@ export default function SweetieWorldApp() {
     );
   };
 
- // ==========================================
-  // 3. USE EFFECTS (CACHE SYSTEM ADDED)
   // ==========================================
-
-  // 🌟 ပြင်ဆင်ချက်: Bandwidth သက်သာစေရန် ၃ နာရီခံ Local Cache System ဖန်တီးခြင်း
-  const fetchWithCache = async (docName: string, forceFetch = false) => {
-    const CACHE_TIME = 2 * 60 * 60 * 1000;
-    const cacheKey = `cache_${docName}`;
-    const timeKey = `time_${docName}`;
-    const now = Date.now();
-    const savedUser = localStorage.getItem('jbsehunjaes_auth');
-    const isAdmin = savedUser === 'admin';
-
-    // 🌟 ဤနေရာတွင် !forceFetch ကို ထပ်ဖြည့်ထားပါသည်
-    if (!isAdmin && !forceFetch) {
-        const cachedTime = localStorage.getItem(timeKey);
-        if (cachedTime && (now - parseInt(cachedTime)) < CACHE_TIME) {
-            const cachedData = localStorage.getItem(cacheKey);
-            if (cachedData) {
-                return { exists: () => true, data: () => ({ data: JSON.parse(cachedData) }) };
-            }
-        }
-    }
-
-    const snap = await getDoc(doc(db, "SiteData", docName));
-    if (snap.exists() && snap.data()!.data) {
-        try {
-            localStorage.setItem(cacheKey, JSON.stringify(snap.data()!.data));
-            localStorage.setItem(timeKey, now.toString());
-        } catch(e) { }
-    }
-    return snap;
-};
-
+  // 3. USE EFFECTS
+  // ==========================================
   useEffect(() => {
     setIsClient(true);
     const loadData = async () => {
       try {
-        const fetchDoc = async (colName: string, setFn: any, defaultVal: any) => {
-   const snap = await fetchWithCache(colName);
-   if (snap.exists() && snap.data()!.data) { 
-       const rawData = snap.data()!.data;
-       // Users Data ဆိုလျှင် Object (Map) ကနေ UI သုံးရန် Array သို့ ပြောင်းပေးမည်
-       const finalData = colName === 'users' ? (Array.isArray(rawData) ? rawData : Object.values(rawData)) : rawData;
-       if (Object.keys(finalData).length > 0) setFn(finalData);
-   } else if (defaultVal) { setFn(defaultVal); }
-};
+        
 
+        // Data ဆွဲယူမည့် Function များကို သီးသန့်ခွဲထုတ်ခြင်း
         const fetchConfig = async () => {
-            const snapConfig = await fetchWithCache("siteConfig");
-            if (snapConfig.exists() && snapConfig.data()!.data) {
-                let loadedData = snapConfig.data()!.data;
+            const snapConfig = await getDoc(doc(db, "SiteData", "siteConfig"));
+            if (snapConfig.exists() && snapConfig.data().data) {
+                let loadedData = snapConfig.data().data;
                 if (!loadedData.socialLinks) {
                    loadedData.socialLinks = [
                       { id: '1', platform: 'Facebook', url: loadedData.fbLink || '#', logo: '' },
@@ -503,13 +452,15 @@ export default function SweetieWorldApp() {
                    ];
                 }
                 setSiteConfig(loadedData);
-            } else { setSiteConfig(DEFAULT_CONFIG); }
+            } else {
+                setSiteConfig(DEFAULT_CONFIG);
+            }
         };
 
         const fetchShows = async () => {
-            const showsSnap = await fetchWithCache("shows");
-            if (showsSnap.exists() && showsSnap.data()!.data && showsSnap.data()!.data.length > 0) {
-               const parsedShows = showsSnap.data()!.data;
+            const showsSnap = await getDoc(doc(db, "SiteData", "shows"));
+            if (showsSnap.exists() && showsSnap.data().data && showsSnap.data().data.length > 0) {
+               const parsedShows = showsSnap.data().data;
                const migratedShows = parsedShows.map((s: any) => ({
                   ...s, episodes: s.episodes.map((ep: any) => ({ ...ep, links: ep.links ? ep.links : (ep.link ? [{ platform: 'Default', url: ep.link }] : []) }))
                }));
@@ -518,38 +469,56 @@ export default function SweetieWorldApp() {
         };
 
         const fetchMovieViews = async () => {
-            const mvSnap = await fetchWithCache("movieViews");
-            if (mvSnap.exists() && mvSnap.data()!.data) { setMovieViews(mvSnap.data()!.data); }
+            const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
+            if (mvSnap.exists() && mvSnap.data().data) { setMovieViews(mvSnap.data().data); }
         };
 
         const fetchPaymentProviders = async () => {
-            const providerSnap = await fetchWithCache("paymentProviders");
-            if (providerSnap.exists() && providerSnap.data()!.data) { setPaymentProviders(providerSnap.data()!.data); } else { setPaymentProviders(INITIAL_PROVIDERS); }
+            const providerSnap = await getDoc(doc(db, "SiteData", "paymentProviders"));
+            if (providerSnap.exists() && providerSnap.data().data) { setPaymentProviders(providerSnap.data().data); } else { setPaymentProviders(INITIAL_PROVIDERS); }
         };
 
-        await Promise.all([
+        const fetchDoc = async (colName: string, setFn: any, defaultVal: any) => {
+           const snap = await getDoc(doc(db, "SiteData", colName));
+           if (snap.exists() && snap.data().data && snap.data().data.length > 0) { 
+               setFn(snap.data().data); return snap.data().data; 
+           } else if (defaultVal) { 
+               setFn(defaultVal); return defaultVal; 
+           }
+           return null;
+        };
+
+        // 🌟 Bandwidth Optimization (1): API Request များကို ခွဲခြား၍ ဆွဲယူခြင်း
+        const [ loadedUsers ] = await Promise.all([
+            fetchDoc("users", setUsers, INITIAL_USERS), // Users ကို အရင်ဆွဲမည်
             fetchConfig(),
-            fetchDoc("users", setUsers, INITIAL_USERS),
             fetchShows(),
             fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
             fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
             fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: "Jbsehunjae's World မှာ ကြိုဆိုပါတယ်!" }]),
             fetchDoc("faqs", setFaqs, [{ id: '1', title_en: 'How to buy points?', body_en: 'Transfer via KPay or WavePay. Then submit your Transaction ID.', title_mm: 'Point ဘယ်လိုဝယ်ရမလဲ?', body_mm: 'KPay, WavePay မှ ငွေလွှဲပါ။ ပြီးလျှင် Transaction ID အား ထည့်ပေးပါ။' }]),
-            
-            // 🌟 သာမန် User အတွက် မလိုသော Log အထုပ်ကြီးများကို မဆွဲတော့ပါ
-            ...(localStorage.getItem('jbsehunjaes_auth') === 'admin' ? [
-               fetchDoc("pointRequests", setPointRequests, []),
-               fetchDoc("adminLogs", setAdminLogs, [])
-            ] : []),
-            
             fetchDoc("notifications", setNotifications, []),
             fetchMovieViews(),
             fetchPaymentProviders()
         ]);
+
+        // 🌟 Bandwidth Optimization (2): သာမန် User များအတွက် မလိုအပ်သော Data အထုပ်ကြီးများ (Logs, Requests) ကို မဆွဲတော့ဘဲ Admin ဖြစ်မှသာ ဆွဲမည်
+        const savedUser = localStorage.getItem('jbsehunjaes_auth');
+        const currentUserData = loadedUsers ? loadedUsers.find((u: any) => u.username === savedUser) : null;
+        if (currentUserData && currentUserData.role === 'admin') {
+            await Promise.all([
+                fetchDoc("pointRequests", setPointRequests, []),
+                fetchDoc("adminLogs", setAdminLogs, [])
+            ]);
+        }
         
         setIsDataFetched(true); 
-      } catch(e) { console.error("Firebase fetch error", e); } 
-      finally { setIsInitialLoad(false); isReadyToSave.current = true; }
+      } catch(e) { 
+        console.error("Firebase fetch error", e); 
+      } finally { 
+          setIsInitialLoad(false); 
+          isReadyToSave.current = true; 
+      }
     };
     
     loadData();
@@ -562,60 +531,80 @@ export default function SweetieWorldApp() {
   useEffect(() => {
     if (isInitialLoad || users.length === 0) return;
     const savedUser = localStorage.getItem('jbsehunjaes_auth');
+    
     if (savedUser && !currentUser) {
       const found = users.find(u => u.username === savedUser);
-      if (found) { setCurrentUser(found); } 
-      else { localStorage.removeItem('jbsehunjaes_auth'); }
+      if (found) {
+        setCurrentUser(found);
+      } else {
+        localStorage.removeItem('jbsehunjaes_auth');
+      }
     } 
-  }, [isInitialLoad]); 
+    // Login Box ကို အလိုအလျောက် ပေါ်မလာစေရန် ဖြုတ်ထားပါသည်
+  }, [isInitialLoad]); // users ကို dependency ကနေ ဖြုတ်ထားပါတယ် (ခဏခဏ Box မပေါ်စေဖို့ပါ)
 
-  const syncLatestData = async (forceFetch = false) => {
-    isSyncing.current = true; 
+  const syncLatestData = async () => {
+    isSyncing.current = true; // NEW: Auto-save များကို ခဏပိတ်ထားမည်
     try {
+      // --- ၁။ Admin သာလျှင် Admin Data များကို ဆွဲယူမည် (သာမန် User များအတွက် Read အလကားမတက်အောင် ကာကွယ်ခြင်း) ---
       if (currentUser?.role === 'admin') {
-         const pSnap = await fetchWithCache("pointRequests", forceFetch);
-         if (pSnap.exists() && pSnap.data()!.data) setPointRequests(prev => JSON.stringify(prev) !== JSON.stringify(pSnap.data()!.data) ? pSnap.data()!.data : prev);
-         
-         const lSnap = await fetchWithCache("adminLogs", forceFetch);
-         if (lSnap.exists() && lSnap.data()!.data) setAdminLogs(prev => JSON.stringify(prev) !== JSON.stringify(lSnap.data()!.data) ? lSnap.data()!.data : prev);
+         const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
+         if (pSnap.exists() && pSnap.data().data) {
+            setPointRequests(prev => JSON.stringify(prev) !== JSON.stringify(pSnap.data().data) ? pSnap.data().data : prev);
+         }
+         const lSnap = await getDoc(doc(db, "SiteData", "adminLogs"));
+         if (lSnap.exists() && lSnap.data().data) {
+            setAdminLogs(prev => JSON.stringify(prev) !== JSON.stringify(lSnap.data().data) ? lSnap.data().data : prev);
+         }
       }
 
-      const sSnap = await fetchWithCache("shows", forceFetch);
-      if (sSnap.exists() && sSnap.data()!.data) setShows(prev => JSON.stringify(prev) !== JSON.stringify(sSnap.data()!.data) ? sSnap.data()!.data : prev);
-      
-     const uSnap = await fetchWithCache("users", forceFetch);
-if (uSnap.exists() && uSnap.data()!.data) {
-   const rawData = uSnap.data()!.data;
-   const fetchedUsers = Array.isArray(rawData) ? rawData : Object.values(rawData);
-   setUsers(prev => JSON.stringify(prev) !== JSON.stringify(fetchedUsers) ? (fetchedUsers as UserData[]) : prev);
+      // --- ၂။ User အားလုံးအတွက် မရှိမဖြစ် လိုအပ်သော Data များ ---
+      // NEW: ဇာတ်ကား Link အသစ်များကို Refresh လုပ်စရာမလိုဘဲ Auto-Update ဖြစ်စေရန်
+      const sSnap = await getDoc(doc(db, "SiteData", "shows"));
+      if (sSnap.exists() && sSnap.data().data) {
+         setShows(prev => JSON.stringify(prev) !== JSON.stringify(sSnap.data().data) ? sSnap.data().data : prev);
+      }
+      const uSnap = await getDoc(doc(db, "SiteData", "users"));
+      if (uSnap.exists() && uSnap.data().data) {
+         const fetchedUsers = uSnap.data().data;
+         setUsers(prev => JSON.stringify(prev) !== JSON.stringify(fetchedUsers) ? fetchedUsers : prev);
          setCurrentUser(prev => {
             if (!prev) return prev;
             const updated = fetchedUsers.find((u: UserData) => u.username === prev.username);
             return (updated && JSON.stringify(prev) !== JSON.stringify(updated)) ? updated : prev;
          });
       }
-      const nSnap = await fetchWithCache("notifications", forceFetch);
-      if (nSnap.exists() && nSnap.data()!.data) setNotifications(prev => JSON.stringify(prev) !== JSON.stringify(nSnap.data()!.data) ? nSnap.data()!.data : prev);
-      
-      const mvSnap = await fetchWithCache("movieViews", forceFetch);
-      if (mvSnap.exists() && mvSnap.data()!.data) setMovieViews(prev => JSON.stringify(prev) !== JSON.stringify(mvSnap.data()!.data) ? mvSnap.data()!.data : prev);
-      
-    } catch(e) { console.error("Sync error:", e); } 
-    finally { setTimeout(() => { isSyncing.current = false; }, 1000); }
-};
+      const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
+      if (nSnap.exists() && nSnap.data().data) {
+         setNotifications(prev => JSON.stringify(prev) !== JSON.stringify(nSnap.data().data) ? nSnap.data().data : prev);
+      }
+      const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
+      if (mvSnap.exists() && mvSnap.data().data) {
+         setMovieViews(prev => JSON.stringify(prev) !== JSON.stringify(mvSnap.data().data) ? mvSnap.data().data : prev);
+      }
+    } catch(e) {
+      console.error("Sync error:", e);
+    } finally {
+      setTimeout(() => { isSyncing.current = false; }, 1000); // NEW: စက္ကန့်ဝက်အကြာမှ Auto-save ပြန်ဖွင့်မည်
+    }
+  };
 
   useEffect(() => {
     if (isInitialLoad) return;
+
     let interval: any;
-    if (currentUser?.role === 'admin') { interval = setInterval(() => { syncLatestData(); }, 30000); }
+    // ၁။ Admin ဖြစ်မှသာ စက္ကန့် ၃၀ တစ်ခါ အလိုလို Sync လုပ်မည် (Read မတက်အောင် ကာကွယ်ထားခြင်း)
+    if (currentUser?.role === 'admin') {
+       interval = setInterval(() => { syncLatestData(); }, 30000); 
+    }
     
-    // 🌟 ပြင်ဆင်ချက်: Tab ပြောင်းတိုင်း အလကား Data ထပ်ခါထပ်ခါ မဆွဲအောင်
-    let lastFocusTime = Date.now();
+    // 🌟 Bandwidth Optimization (3): Tab ပြောင်းတိုင်း/ဖုန်းပြန်ဖွင့်တိုင်း Data အထုပ်ကြီး ပြန်ဆွဲနေခြင်းကို တားဆီးရန် (၃ မိနစ်ခြားမှ တစ်ခါသာ ဆွဲခွင့်ပြုမည်)
+    let lastSyncTime = Date.now();
     const handleFocus = () => { 
         const now = Date.now();
-        if (now - lastFocusTime > 180000) { // Tab ပြောင်းခြင်းကို ၃ မိနစ် (180000ms) Timer ခံထားခြင်း
+        if (now - lastSyncTime > 180000) { // 180000 ms = 3 Minutes (၃ မိနစ်မပြည့်ဘဲ Tab အခါ ၁၀၀ ပြောင်းလည်း Data ထပ်မဆွဲပါ)
             syncLatestData(); 
-            lastFocusTime = now;
+            lastSyncTime = now;
         }
     };
     window.addEventListener('focus', handleFocus);
@@ -627,6 +616,7 @@ if (uSnap.exists() && uSnap.data()!.data) {
   }, [isInitialLoad, currentUser?.role]);
 
   // Admin သာလျှင် Auto-save အလုပ်လုပ်စေရန် ပြင်ဆင်ချက် (Write Limit လေလွင့်မှု ကာကွယ်ရန်)
+useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users, currentUser?.role]);
 useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "shows"), { data: shows }); }, [shows, currentUser?.role]);
 useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "categories"), { data: categories }); }, [categories, currentUser?.role]);
 useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "platforms"), { data: platforms }); }, [platforms, currentUser?.role]);
@@ -802,15 +792,15 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
     // --- NEW: Database မှ နောက်ဆုံး Users စာရင်းကို အရင်ဆွဲယူမည် (အကောင့်ပျောက်ခြင်းမှ ကာကွယ်ရန်) ---
     const uSnap = await getDoc(doc(db, "SiteData", "users"));
     let latestUsers = users;
-    if (uSnap.exists() && uSnap.data()!.data) {
-   latestUsers = uSnap.data()!.data;
-}
+    if (uSnap.exists() && uSnap.data().data) {
+       latestUsers = uSnap.data().data;
+    }
     
     // --- ထပ်ဖြည့်ရန်: Point Request History ကိုပါ နောက်ဆုံးဟာ လှမ်းဆွဲမည် ---
     const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
-    if (pSnap.exists() && pSnap.data()!.data) {
-   setPointRequests(pSnap.data()!.data);
-}
+    if (pSnap.exists() && pSnap.data().data) {
+       setPointRequests(pSnap.data().data);
+    }
 
     if (authMode === 'register') {
       const exists = latestUsers.find(u => u.username.toLowerCase() === authForm.username.trim().toLowerCase() || u.email.toLowerCase() === authForm.email.trim().toLowerCase());
@@ -837,7 +827,7 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
 
       const updatedUsersList = [newUser, ...latestUsers];
       setUsers(updatedUsersList); // အကောင့်သစ်ကို အပေါ်ဆုံးရောက်အောင် ပြင်ပါသည်
-updateSingleUserInDB(newUser, updatedUsersList);
+      setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
 
       setCurrentUser(newUser);
       if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
@@ -858,7 +848,7 @@ updateSingleUserInDB(newUser, updatedUsersList);
         const updatedUser = { ...user, lastLoginAt: new Date().toISOString() };
         const updatedUsersList = latestUsers.map(u => u.username === updatedUser.username ? updatedUser : u);
         setUsers(updatedUsersList);
-        updateSingleUserInDB(updatedUser, updatedUsersList);
+        setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); // ချက်ချင်း Save မည်
 
         setCurrentUser(updatedUser);
         if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
@@ -895,7 +885,7 @@ updateSingleUserInDB(newUser, updatedUsersList);
   const updatedUsers = users.map(u => u.username === currentUser.username ? {...u, password: pwdForm.new.trim()} : u);
   setUsers(updatedUsers);
   // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
-  updateSingleUserInDB({...currentUser, password: pwdForm.new.trim()}, updatedUsers);
+  setDoc(doc(db, "SiteData", "users"), { data: updatedUsers });
   setCurrentUser({...currentUser, password: pwdForm.new.trim()});
   showToast("Password updated successfully!");
   setChangePwdModalOpen(false);
@@ -1007,14 +997,7 @@ updateSingleUserInDB(newUser, updatedUsersList);
     }
 
     // Database ပေါ် သေချာရောက်အောင် သိမ်းမည်
-    if (editUserModal.mode === 'edit' && editUserModal.oldUsername !== editUserForm.username.trim()) {
-    // Username ပြောင်းသွားလျှင် လုံးဝအသစ်ပြန်ရေးမည်
-    const usersMap: any = {}; updatedUsersList.forEach(u => usersMap[u.username] = u);
-    await setDoc(doc(db, "SiteData", "users"), { data: usersMap });
-} else {
-    const targetUser = updatedUsersList.find(u => u.username === (editUserModal.mode === 'create' ? editUserForm.username.trim() : editUserModal.oldUsername));
-    if (targetUser) await updateSingleUserInDB(targetUser, updatedUsersList);
-}
+    await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList });
 
     showToast(t.msgUserSaved);
     setEditUserModal({isOpen: false, mode: 'create'});
@@ -1395,12 +1378,12 @@ updateSingleUserInDB(newUser, updatedUsersList);
               </div>
 
               {/* BIGGER POINTS BUTTON */}
-              <button onClick={() => {syncLatestData(true); setPayStep('menu'); setPointModalOpen(true);}} className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border-2 border-[#fcd385] text-[#fcd385] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-sm sm:text-base font-black shadow-[0_0_10px_rgba(252,211,133,0.3)] hover:brightness-110 transition shrink-0">
+              <button onClick={() => {syncLatestData(); setPayStep('menu'); setPointModalOpen(true);}} className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border-2 border-[#fcd385] text-[#fcd385] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-sm sm:text-base font-black shadow-[0_0_10px_rgba(252,211,133,0.3)] hover:brightness-110 transition shrink-0">
                 <Coins className="w-5 h-5 sm:w-5 sm:h-5 text-yellow-400" /> <span>{currentUser.points} {t.pts}</span>
               </button>
               
               {/* BIGGER USER PROFILE BUTTON */}
-              <div onClick={() => {syncLatestData(true); setUserMenuTab('menu'); setUserMenuOpen(true);}} className="cursor-pointer p-2 sm:p-2 bg-[#fcd385] rounded-full hover:bg-yellow-400 transition shadow-[0_0_10px_rgba(252,211,133,0.4)] border-2 border-[#d4af37] flex items-center justify-center shrink-0">
+              <div onClick={() => {syncLatestData(); setUserMenuTab('menu'); setUserMenuOpen(true);}} className="cursor-pointer p-2 sm:p-2 bg-[#fcd385] rounded-full hover:bg-yellow-400 transition shadow-[0_0_10px_rgba(252,211,133,0.4)] border-2 border-[#d4af37] flex items-center justify-center shrink-0">
                  <User className="w-5 h-5 sm:w-5 sm:h-5 text-[#3e1717]" />
               </div>
             </div>
@@ -1939,19 +1922,10 @@ updateSingleUserInDB(newUser, updatedUsersList);
                                  <button onClick={() => setUserDetailModal(u)} className="p-2 bg-zinc-800 rounded text-emerald-400 hover:bg-zinc-700 transition" title="View Details"><Eye className="w-4 h-4"/></button>
                                  <button onClick={() => {setEditUserForm({...u}); setEditUserRemark(''); setEditUserModal({isOpen: true, mode: 'edit', oldUsername: u.username});}} className="p-2 bg-zinc-800 rounded text-blue-400 hover:bg-zinc-700 transition" title="Edit User"><Edit className="w-4 h-4"/></button>
                                  {u.username !== currentUser.username && (
-  <button onClick={() => setConfirmModal({
-     message: t.confirmDelDesc,
-     onConfirm: async () => {
-         const remaining = users.filter(user => user.username !== u.username);
-         setUsers(remaining);
-         try { 
-             await updateDoc(doc(db, "SiteData", "users"), { [`data.${u.username}`]: deleteField() }); 
-         } catch(e) { 
-             const usersMap: any = {}; remaining.forEach(r => usersMap[r.username] = r); 
-             await setDoc(doc(db, "SiteData", "users"), { data: usersMap }); 
-         }
-     }
-  })} className="p-2 bg-zinc-800 rounded text-red-400 hover:bg-zinc-700 transition" title="Delete User"><Trash2 className="w-4 h-4"/></button>
+                                   <button onClick={() => setConfirmModal({
+                                      message: t.confirmDelDesc,
+                                      onConfirm: () => setUsers(users.filter(user => user.username !== u.username))
+                                   })} className="p-2 bg-zinc-800 rounded text-red-400 hover:bg-zinc-700 transition" title="Delete User"><Trash2 className="w-4 h-4"/></button>
                                  )}
                                </div>
                              </td>
@@ -1972,7 +1946,7 @@ updateSingleUserInDB(newUser, updatedUsersList);
               <div className="animate-fade-in space-y-6">
                 <div className="flex justify-between items-center">
                   <h3 className="text-xl font-bold text-white border-l-4 border-[#fcd385] pl-3">{t.pointReqs}</h3>
-                  <button onClick={() => syncLatestData(true)} className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-[#fcd385] px-3 py-2 rounded-lg transition shadow-lg border border-zinc-700">
+                  <button onClick={syncLatestData} className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-[#fcd385] px-3 py-2 rounded-lg transition shadow-lg border border-zinc-700">
                       <RefreshCw className="w-4 h-4" /> Sync
                   </button>
                 </div>
@@ -2014,8 +1988,7 @@ updateSingleUserInDB(newUser, updatedUsersList);
     setNotifications(updatedNotis);
 
     // Database ပေါ် သေချာရောက်အောင် သိမ်းမည်
-    const approvedUser = updatedUsers.find(u => u.username === req.username);
-if (approvedUser) await updateSingleUserInDB(approvedUser, updatedUsers);
+    await setDoc(doc(db, "SiteData", "users"), { data: updatedUsers });
     await setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedPointReqs });
     await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
 
@@ -3874,7 +3847,7 @@ trackMovieView(platformSelectModal.show.id);
 const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
 setUsers(updatedUsersList);
 // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
-updateSingleUserInDB(updatedUser, updatedUsersList);
+setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
 setCurrentUser(updatedUser);
                       setVipModalShow(null);
                       showToast(t.msgVipSuccess);
@@ -3949,7 +3922,7 @@ setCurrentUser(updatedUser);
                       };
                       const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
                       setUsers(updatedUsersList);
-                      updateSingleUserInDB(updatedUser, updatedUsersList);
+                      setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
                       setCurrentUser(updatedUser);
                       setMiniVipModalShow(null);
                       showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
