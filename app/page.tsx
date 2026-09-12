@@ -598,15 +598,8 @@ export default function SweetieWorldApp() {
        interval = setInterval(() => { syncLatestData(); }, 30000); 
     }
     
-    // 🌟 Bandwidth Optimization (3): Tab ပြောင်းတိုင်း/ဖုန်းပြန်ဖွင့်တိုင်း Data အထုပ်ကြီး ပြန်ဆွဲနေခြင်းကို တားဆီးရန် (၃ မိနစ်ခြားမှ တစ်ခါသာ ဆွဲခွင့်ပြုမည်)
-    let lastSyncTime = Date.now();
-    const handleFocus = () => { 
-        const now = Date.now();
-        if (now - lastSyncTime > 180000) { // 180000 ms = 3 Minutes (၃ မိနစ်မပြည့်ဘဲ Tab အခါ ၁၀၀ ပြောင်းလည်း Data ထပ်မဆွဲပါ)
-            syncLatestData(); 
-            lastSyncTime = now;
-        }
-    };
+    // ၂။ User အားလုံးအတွက် (Website ကို ပြန်ဖွင့်တဲ့အချိန် / Tab ပြောင်းပြီး ပြန်ဝင်လာတဲ့အချိန်) မှသာ Data အသစ်လှမ်းဆွဲမည်
+    const handleFocus = () => { syncLatestData(); };
     window.addEventListener('focus', handleFocus);
 
     return () => {
