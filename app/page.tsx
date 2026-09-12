@@ -1010,6 +1010,51 @@ export default function SweetieWorldApp() {
       setAlertModal({ message: "Network Error. Please try again." });
     }
   };
+	
+  // --- DATABASE MIGRATION FUNCTION ---
+  const handleMigrateOldUsers = async () => {
+    const confirm = window.confirm("အကောင့်ဟောင်းများအားလုံးကို စနစ်သစ်သို့ ပြောင်းရွှေ့မည်မှာ သေချာပါသလား? (စက္ကန့်အနည်းငယ် ကြာနိုင်ပါသည်)");
+    if (!confirm) return;
+
+    isSyncing.current = true;
+    showToast("Data များ စတင်ပြောင်းရွှေ့နေပါသည်... ခေတ္တစောင့်ပါ။");
+    
+    try {
+      // ၁။ Database ဟောင်း (SiteData/users) မှ Data များကို လှမ်းဆွဲမည်
+      const oldDbSnap = await getDoc(doc(db, "SiteData", "users"));
+      
+      if (oldDbSnap.exists() && Array.isArray(oldDbSnap.data().data)) {
+          const oldUsers = oldDbSnap.data().data;
+          
+          if (oldUsers.length === 0) {
+              showToast("ပြောင်းရွှေ့ရန် အကောင့်ဟောင်းများ မရှိတော့ပါ။");
+              isSyncing.current = false;
+              return;
+          }
+
+          // ၂။ Database သစ် (Users Collection) ထဲသို့ ဖိုင်တစ်ဖိုင်စီ လှည့်ပြီး Save မည်
+          let count = 0;
+          for (const u of oldUsers) {
+              await setDoc(doc(db, "Users", u.username), u);
+              count++;
+          }
+
+          // ၃။ Admin Dashboard တွင် ချက်ချင်းပြန်ပေါ်လာစေရန် State ကို Update လုပ်မည်
+          setUsers(oldUsers);
+          showToast(`အကောင့်ဟောင်း (${count}) ခုကို အောင်မြင်စွာ ပြောင်းရွှေ့ပြီးပါပြီ!`);
+          
+          // Dashboard ကို နောက်ဆုံးအခြေအနေဖြစ်သွားအောင် Sync လုပ်မည်
+          syncLatestData();
+      } else {
+          showToast("Database အဟောင်းကို ရှာမတွေ့ပါ။");
+      }
+    } catch (error) {
+      console.error("Migration Error:", error);
+      setAlertModal({ message: "Network Error! Console တွင် စစ်ဆေးပါ။" });
+    } finally {
+      isSyncing.current = false;
+    }
+  };
 
   const handleAdminSaveUser = async () => {
   if (!editUserRemark.trim() && editUserModal.mode === 'edit') return setAlertModal({ message: "လုပ်ဆောင်ရသည့် အကြောင်းရင်း (Remark) ကို ထည့်ပေးပါ။" });
@@ -2578,6 +2623,17 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                     </div>
                   </div>
                 </div>
+
+		{/* --- DATABASE MIGRATION TOOL --- */}
+                    <div className="bg-[#1f1f1f] p-5 rounded-2xl border border-red-900/50 mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                       <div>
+                          <h4 className="text-sm font-bold text-red-400 mb-1">Database Migration Tool (Data ပြောင်းရွှေ့ရန်)</h4>
+                          <p className="text-xs text-zinc-400">User အဟောင်းများအားလုံးကို စနစ်သစ်သို့ ချက်ချင်း ပြောင်းရွှေ့မည်။ (ဤခလုတ်ကို တစ်ကြိမ်သာ နှိပ်ပါ)</p>
+                       </div>
+                       <button onClick={handleMigrateOldUsers} className="bg-red-900/50 hover:bg-red-800 text-red-200 border border-red-700 px-4 py-2 rounded-lg text-sm font-bold transition whitespace-nowrap shadow-lg flex items-center gap-2">
+                          <RefreshCw className="w-4 h-4"/> Start Migration
+                       </button>
+                    </div>
                 
                 <div className="flex justify-end pt-4">
                   <button onClick={() => showToast(t.msgUserSaved)} className="bg-[#fcd385] text-[#3e0a0a] px-10 py-3.5 rounded-xl text-sm font-black hover:brightness-110 transition shadow-lg">
