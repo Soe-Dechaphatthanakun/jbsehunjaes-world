@@ -833,15 +833,16 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
         setShowWelcomePromo(true);
         
       } else if (authMode === 'login') {
-        const inputUsernameOrEmail = authForm.username.trim().toLowerCase();
-        
-        const user = latestUsers.find(u => 
-          (u.username?.toLowerCase() === inputUsernameOrEmail || u.email?.toLowerCase() === inputUsernameOrEmail) && 
-          u.password === authForm.password
-        );
-        
-        if (user) {
-          const updatedUser = { ...user, lastLoginAt: new Date().toISOString() };
+  const inputUsernameOrEmail = authForm.username.trim().toLowerCase();
+  
+  // ပြင်ဆင်ချက် - String() ပြောင်းပေးခြင်းနှင့် trim() ထပ်တိုးခြင်း
+  const user = latestUsers.find(u => 
+    (u.username?.trim().toLowerCase() === inputUsernameOrEmail || u.email?.trim().toLowerCase() === inputUsernameOrEmail) && 
+    String(u.password) === authForm.password.trim()
+  );
+  
+  if (user) {
+    const updatedUser = { ...user, lastLoginAt: new Date().toISOString() };
           const updatedUsersList = latestUsers.map(u => u.username === updatedUser.username ? updatedUser : u);
           setUsers(updatedUsersList);
           
