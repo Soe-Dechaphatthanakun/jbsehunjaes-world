@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where } from "firebase/firestore";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
   Globe, Menu, Home, HelpCircle, Gift, Info, Send, Phone,
@@ -490,7 +490,14 @@ export default function SweetieWorldApp() {
 
         // 🌟 Bandwidth Optimization (1): API Request များကို ခွဲခြား၍ ဆွဲယူခြင်း
         const [ loadedUsers ] = await Promise.all([
-            fetchDoc("users", setUsers, INITIAL_USERS), // Users ကို အရင်ဆွဲမည်
+    (async () => { 
+       const savedUser = localStorage.getItem('jbsehunjaes_auth');
+       if(savedUser) {
+          const uSnap = await getDoc(doc(db, "Users", savedUser));
+          if(uSnap.exists()) { const d = [uSnap.data() as UserData]; setUsers(d); return d; }
+       }
+       setUsers([]); return []; 
+    })(),
             fetchConfig(),
             fetchShows(),
             fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
@@ -564,16 +571,23 @@ export default function SweetieWorldApp() {
       if (sSnap.exists() && sSnap.data().data) {
          setShows(prev => JSON.stringify(prev) !== JSON.stringify(sSnap.data().data) ? sSnap.data().data : prev);
       }
-      const uSnap = await getDoc(doc(db, "SiteData", "users"));
-      if (uSnap.exists() && uSnap.data().data) {
-         const fetchedUsers = uSnap.data().data;
-         setUsers(prev => JSON.stringify(prev) !== JSON.stringify(fetchedUsers) ? fetchedUsers : prev);
-         setCurrentUser(prev => {
-            if (!prev) return prev;
-            const updated = fetchedUsers.find((u: UserData) => u.username === prev.username);
-            return (updated && JSON.stringify(prev) !== JSON.stringify(updated)) ? updated : prev;
-         });
-      }
+      // Admin ဆိုရင် User အားလုံးကိုဆွဲမည်၊ Normal User ဆိုရင် သူ့အကောင့်တစ်ခုတည်းကိုပဲ ဆွဲမည် (Read Limit ကာကွယ်ရန်)
+  if (currentUser?.role === 'admin') {
+     const uSnap = await getDocs(collection(db, "Users"));
+     if (!uSnap.empty) {
+        const fetchedUsers = uSnap.docs.map(d => d.data() as UserData);
+        setUsers(fetchedUsers);
+        const updated = fetchedUsers.find(u => u.username === currentUser.username);
+        if (updated) setCurrentUser(updated);
+     }
+  } else if (currentUser) {
+     const uSnap = await getDoc(doc(db, "Users", currentUser.username));
+     if (uSnap.exists()) {
+        const updatedUser = uSnap.data() as UserData;
+        setUsers([updatedUser]);
+        setCurrentUser(updatedUser);
+     }
+  }
       const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
       if (nSnap.exists() && nSnap.data().data) {
          setNotifications(prev => JSON.stringify(prev) !== JSON.stringify(nSnap.data().data) ? nSnap.data().data : prev);
@@ -609,7 +623,6 @@ export default function SweetieWorldApp() {
   }, [isInitialLoad, currentUser?.role]);
 
   // 🌟 Admin သာလျှင် Auto-save အလုပ်လုပ်စေရန်နှင့် Write လေလွင့်မှုမှ ကာကွယ်ရန် (2 Seconds Delay ထည့်သွင်းထားသည်)
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "users"), { data: users }), 2000); return () => clearTimeout(t); } }, [users, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "shows"), { data: shows }), 2000); return () => clearTimeout(t); } }, [shows, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "categories"), { data: categories }), 2000); return () => clearTimeout(t); } }, [categories, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "platforms"), { data: platforms }), 2000); return () => clearTimeout(t); } }, [platforms, currentUser?.role]);
@@ -782,25 +795,18 @@ export default function SweetieWorldApp() {
     e.preventDefault();
     setAuthError('');
 
-    let latestUsers = users; // Default အနေနဲ့ Website ပွင့်ကတည်းက ရထားတဲ့ Local Data ကိုသုံးမည်
-
-    // ၁။ Firebase ကနေ နောက်ဆုံး Data လှမ်းဆွဲမည် (Error တက်ရင် Login မပျက်သွားအောင် သီးသန့် try-catch ခွဲထုတ်ထားသည်)
-    try {
-      const uSnap = await getDoc(doc(db, "SiteData", "users"));
-      if (uSnap.exists() && Array.isArray(uSnap.data().data)) {
-         latestUsers = uSnap.data().data;
-      }
-    } catch (fetchError) {
-      console.warn("Firebase Fetch Error (Using local state): ", fetchError);
-      // Fetch fail ဖြစ်ခဲ့ရင်တောင် latestUsers ဟာ local 'users' အတိုင်းရှိနေမှာဖြစ်လို့ Login ဆက်ဝင်လို့ရပါမယ်။
-    }
-
-    // ၂။ Login / Register လုပ်ငန်းစဉ်များ
     try {
       if (authMode === 'register') {
-        const exists = latestUsers.find(u => u.username?.toLowerCase() === authForm.username.trim().toLowerCase() || u.email?.toLowerCase() === authForm.email.trim().toLowerCase());
+        // --- READ LIMIT ကာကွယ်ရန်: Collection တစ်ခုလုံးမဆွဲဘဲ Username သို့ Email ရှိမရှိ သီးသန့်စစ်မည် (Read ၁-၂ ခါသာကုန်မည်) ---
+        const inputUsername = authForm.username.trim().toLowerCase();
+        const inputEmail = authForm.email.trim().toLowerCase();
         
-        if (exists) return setAuthError(t.msgExists);
+        const usernameSnap = await getDoc(doc(db, "Users", inputUsername));
+        if (usernameSnap.exists()) return setAuthError(t.msgExists);
+        
+        const emailQuery = query(collection(db, "Users"), where("email", "==", inputEmail));
+        const emailSnap = await getDocs(emailQuery);
+        if (!emailSnap.empty) return setAuthError(t.msgExists);
         
         const newUser: UserData = { 
           ...authForm, role: 'user', points: 0, vip: false, unlockedShows: [],
@@ -816,10 +822,9 @@ export default function SweetieWorldApp() {
         };
         setNotifications([newNoti, ...notifications]);
 
-        const updatedUsersList = [newUser, ...latestUsers];
-        setUsers(updatedUsersList);
+        setUsers([newUser]); // Normal User အတွက် သူ့အကောင့်ပဲ Local မှာထားမည်
         
-        try { await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); } 
+        try { await setDoc(doc(db, "Users", newUser.username), newUser); }
         catch (dbError) { console.error("Firebase saving error: ", dbError); }
 
         setCurrentUser(newUser);
@@ -833,20 +838,24 @@ export default function SweetieWorldApp() {
         setShowWelcomePromo(true);
         
       } else if (authMode === 'login') {
-  const inputUsernameOrEmail = authForm.username.trim().toLowerCase();
-  
-  // ပြင်ဆင်ချက် - String() ပြောင်းပေးခြင်းနှင့် trim() ထပ်တိုးခြင်း
-  const user = latestUsers.find(u => 
-    (u.username?.trim().toLowerCase() === inputUsernameOrEmail || u.email?.trim().toLowerCase() === inputUsernameOrEmail) && 
-    String(u.password) === authForm.password.trim()
-  );
-  
-  if (user) {
-    const updatedUser = { ...user, lastLoginAt: new Date().toISOString() };
-          const updatedUsersList = latestUsers.map(u => u.username === updatedUser.username ? updatedUser : u);
-          setUsers(updatedUsersList);
+        const inputUsernameOrEmail = authForm.username.trim().toLowerCase();
+        let userDoc = null;
+        
+        // --- READ LIMIT ကာကွယ်ရန်: Email ဖြင့်ဝင်ပါက Query သုံးမည်၊ Username ဖြင့်ဝင်ပါက တိုက်ရိုက်ဆွဲမည် (Read ၁ ခေါက်သာကုန်မည်) ---
+        if (inputUsernameOrEmail.includes('@')) {
+            const emailQuery = query(collection(db, "Users"), where("email", "==", inputUsernameOrEmail));
+            const emailSnap = await getDocs(emailQuery);
+            if (!emailSnap.empty) userDoc = emailSnap.docs[0].data() as UserData;
+        } else {
+            const uSnap = await getDoc(doc(db, "Users", inputUsernameOrEmail));
+            if (uSnap.exists()) userDoc = uSnap.data() as UserData;
+        }
+        
+        if (userDoc && String(userDoc.password) === authForm.password.trim()) {
+          const updatedUser = { ...userDoc, lastLoginAt: new Date().toISOString() };
+          setUsers([updatedUser]); // Normal User အတွက် သူ့အကောင့်ပဲ Local မှာထားမည်
           
-          try { await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); } 
+          try { await setDoc(doc(db, "Users", updatedUser.username), updatedUser); }
           catch (dbError) { console.error("Firebase saving error: ", dbError); }
 
           setCurrentUser(updatedUser);
@@ -863,9 +872,10 @@ export default function SweetieWorldApp() {
         }
         
       } else if (authMode === 'forgot') {
-        const user = latestUsers.find(u => u.username?.toLowerCase() === authForm.username.trim().toLowerCase() && u.email?.toLowerCase() === authForm.email.trim().toLowerCase());
-        if (user) {
-           setAlertModal({ message: `Password: ${user.password}` });
+        const inputUsername = authForm.username.trim().toLowerCase();
+        const uSnap = await getDoc(doc(db, "Users", inputUsername));
+        if (uSnap.exists() && uSnap.data().email.toLowerCase() === authForm.email.trim().toLowerCase()) {
+           setAlertModal({ message: `Password: ${uSnap.data().password}` });
            setAuthMode('login');
         } else {
            setAuthError(t.msgWrong);
@@ -889,7 +899,7 @@ export default function SweetieWorldApp() {
   const updatedUsers = users.map(u => u.username === currentUser.username ? {...u, password: pwdForm.new.trim()} : u);
   setUsers(updatedUsers);
   // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
-  setDoc(doc(db, "SiteData", "users"), { data: updatedUsers });
+  setDoc(doc(db, "Users", currentUser.username), {...currentUser, password: pwdForm.new.trim()});
   setCurrentUser({...currentUser, password: pwdForm.new.trim()});
   showToast("Password updated successfully!");
   setChangePwdModalOpen(false);
@@ -1025,7 +1035,8 @@ export default function SweetieWorldApp() {
     }
 
     // Database ပေါ် သေချာရောက်အောင် သိမ်းမည်
-    await setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList });
+    const targetSaveUser = editUserModal.mode === 'create' ? updatedUsersList[0] : updatedUsersList.find(u => u.username === editUserModal.oldUsername);
+if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targetSaveUser);
 
     showToast(t.msgUserSaved);
     setEditUserModal({isOpen: false, mode: 'create'});
@@ -1952,7 +1963,7 @@ export default function SweetieWorldApp() {
                                  {u.username !== currentUser.username && (
                                    <button onClick={() => setConfirmModal({
                                       message: t.confirmDelDesc,
-                                      onConfirm: () => setUsers(users.filter(user => user.username !== u.username))
+                                      onConfirm: async () => { setUsers(users.filter(user => user.username !== u.username)); await deleteDoc(doc(db, "Users", u.username)); }
                                    })} className="p-2 bg-zinc-800 rounded text-red-400 hover:bg-zinc-700 transition" title="Delete User"><Trash2 className="w-4 h-4"/></button>
                                  )}
                                </div>
@@ -2016,7 +2027,7 @@ export default function SweetieWorldApp() {
     setNotifications(updatedNotis);
 
     // Database ပေါ် သေချာရောက်အောင် သိမ်းမည်
-    await setDoc(doc(db, "SiteData", "users"), { data: updatedUsers });
+    await setDoc(doc(db, "Users", req.username), updatedUsers.find(u => u.username === req.username));
     await setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedPointReqs });
     await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
 
@@ -3851,7 +3862,7 @@ trackMovieView(platformSelectModal.show.id);
 const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
 setUsers(updatedUsersList);
 // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
-setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
+setDoc(doc(db, "Users", currentUser.username), updatedUser);
 setCurrentUser(updatedUser);
                       setVipModalShow(null);
                       showToast(t.msgVipSuccess);
@@ -3926,7 +3937,7 @@ setCurrentUser(updatedUser);
                       };
                       const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
                       setUsers(updatedUsersList);
-                      setDoc(doc(db, "SiteData", "users"), { data: updatedUsersList }); 
+                      setDoc(doc(db, "Users", currentUser.username), updatedUser);
                       setCurrentUser(updatedUser);
                       setMiniVipModalShow(null);
                       showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
