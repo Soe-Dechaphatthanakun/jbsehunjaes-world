@@ -797,8 +797,7 @@ export default function SweetieWorldApp() {
 
     try {
       if (authMode === 'register') {
-        // --- READ LIMIT ကာကွယ်ရန်: Collection တစ်ခုလုံးမဆွဲဘဲ Username သို့ Email ရှိမရှိ သီးသန့်စစ်မည် (Read ၁-၂ ခါသာကုန်မည်) ---
-        const inputUsername = authForm.username.trim().toLowerCase();
+        const inputUsername = authForm.username.trim();
         const inputEmail = authForm.email.trim().toLowerCase();
         
         const usernameSnap = await getDoc(doc(db, "Users", inputUsername));
@@ -809,7 +808,7 @@ export default function SweetieWorldApp() {
         if (!emailSnap.empty) return setAuthError(t.msgExists);
         
         const newUser: UserData = { 
-          ...authForm, role: 'user', points: 0, vip: false, unlockedShows: [],
+          ...authForm, username: inputUsername, email: inputEmail, role: 'user', points: 0, vip: false, unlockedShows: [],
           createdAt: new Date().toISOString(),
           lastLoginAt: new Date().toISOString(),
           pointHistory: []
@@ -822,7 +821,7 @@ export default function SweetieWorldApp() {
         };
         setNotifications([newNoti, ...notifications]);
 
-        setUsers([newUser]); // Normal User အတွက် သူ့အကောင့်ပဲ Local မှာထားမည်
+        setUsers([newUser]); 
         
         try { await setDoc(doc(db, "Users", newUser.username), newUser); }
         catch (dbError) { console.error("Firebase saving error: ", dbError); }
@@ -838,25 +837,60 @@ export default function SweetieWorldApp() {
         setShowWelcomePromo(true);
         
       } else if (authMode === 'login') {
-        const inputUsernameOrEmail = authForm.username.trim().toLowerCase();
+        const rawInput = authForm.username.trim();
+        const lowerInput = rawInput.toLowerCase();
         let userDoc = null;
+        let isFromOldDb = false;
         
-        // --- READ LIMIT ကာကွယ်ရန်: Email ဖြင့်ဝင်ပါက Query သုံးမည်၊ Username ဖြင့်ဝင်ပါက တိုက်ရိုက်ဆွဲမည် (Read ၁ ခေါက်သာကုန်မည်) ---
-        if (inputUsernameOrEmail.includes('@')) {
-            const emailQuery = query(collection(db, "Users"), where("email", "==", inputUsernameOrEmail));
+        // ၁။ System အသစ် (Users Collection) တွင် အရင်ရှာမည်
+        if (lowerInput.includes('@')) {
+            const emailQuery = query(collection(db, "Users"), where("email", "==", lowerInput));
             const emailSnap = await getDocs(emailQuery);
             if (!emailSnap.empty) userDoc = emailSnap.docs[0].data() as UserData;
         } else {
-            const uSnap = await getDoc(doc(db, "Users", inputUsernameOrEmail));
-            if (uSnap.exists()) userDoc = uSnap.data() as UserData;
+            const docSnap = await getDoc(doc(db, "Users", rawInput));
+            if (docSnap.exists()) {
+                userDoc = docSnap.data() as UserData;
+            } else {
+                const uQuery = query(collection(db, "Users"), where("username", "==", rawInput));
+                const uSnap = await getDocs(uQuery);
+                if (!uSnap.empty) userDoc = uSnap.docs[0].data() as UserData;
+            }
         }
         
+        // ၂။ System အသစ်မှာ မတွေ့ရင် Database အဟောင်း (SiteData/users) တွင် သွားရှာပြီး Auto-Migrate လုပ်ပေးမည်
+        if (!userDoc) {
+            const oldDbSnap = await getDoc(doc(db, "SiteData", "users"));
+            if (oldDbSnap.exists() && Array.isArray(oldDbSnap.data().data)) {
+                const oldUsers = oldDbSnap.data().data;
+                const foundOldUser = oldUsers.find((u: UserData) => 
+                    (u.username?.trim().toLowerCase() === lowerInput || u.email?.trim().toLowerCase() === lowerInput)
+                );
+                if (foundOldUser) {
+                    userDoc = foundOldUser;
+                    isFromOldDb = true;
+                }
+            }
+        }
+
+        // ၃။ Password မှန်/မမှန် စစ်ဆေးမည်
         if (userDoc && String(userDoc.password) === authForm.password.trim()) {
           const updatedUser = { ...userDoc, lastLoginAt: new Date().toISOString() };
-          setUsers([updatedUser]); // Normal User အတွက် သူ့အကောင့်ပဲ Local မှာထားမည်
+          setUsers([updatedUser]); 
           
-          try { await setDoc(doc(db, "Users", updatedUser.username), updatedUser); }
-          catch (dbError) { console.error("Firebase saving error: ", dbError); }
+          try { 
+              // အကောင့်ကို System အသစ်ပေါ်သို့ အမြဲတမ်း Save ပေးမည် (Database ပြောင်းရွှေ့ခြင်း ပြီးစီးပါမည်)
+              await setDoc(doc(db, "Users", updatedUser.username), updatedUser); 
+              
+              // အဟောင်းထဲကနေ ယူလာတာဆိုရင် အဟောင်းထဲကနေ ဖျက်ပစ်မည်
+              if (isFromOldDb) {
+                  const oldDbSnap = await getDoc(doc(db, "SiteData", "users"));
+                  if (oldDbSnap.exists() && Array.isArray(oldDbSnap.data().data)) {
+                      const remainingOldUsers = oldDbSnap.data().data.filter((u: UserData) => u.username !== updatedUser.username);
+                      await setDoc(doc(db, "SiteData", "users"), { data: remainingOldUsers });
+                  }
+              }
+          } catch (dbError) { console.error("Firebase saving error: ", dbError); }
 
           setCurrentUser(updatedUser);
           if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
@@ -872,10 +906,25 @@ export default function SweetieWorldApp() {
         }
         
       } else if (authMode === 'forgot') {
-        const inputUsername = authForm.username.trim().toLowerCase();
-        const uSnap = await getDoc(doc(db, "Users", inputUsername));
-        if (uSnap.exists() && uSnap.data().email.toLowerCase() === authForm.email.trim().toLowerCase()) {
-           setAlertModal({ message: `Password: ${uSnap.data().password}` });
+        const rawInput = authForm.username.trim();
+        const lowerEmail = authForm.email.trim().toLowerCase();
+        let foundPwd = null;
+
+        // System အသစ်တွင်ရှာမည်
+        const docSnap = await getDoc(doc(db, "Users", rawInput));
+        if (docSnap.exists() && docSnap.data().email.toLowerCase() === lowerEmail) {
+           foundPwd = docSnap.data().password;
+        } else {
+           // System အဟောင်းတွင်ရှာမည်
+           const oldDbSnap = await getDoc(doc(db, "SiteData", "users"));
+           if (oldDbSnap.exists() && Array.isArray(oldDbSnap.data().data)) {
+               const oldUser = oldDbSnap.data().data.find((u: UserData) => u.username?.toLowerCase() === rawInput.toLowerCase() && u.email?.toLowerCase() === lowerEmail);
+               if (oldUser) foundPwd = oldUser.password;
+           }
+        }
+
+        if (foundPwd) {
+           setAlertModal({ message: `Password: ${foundPwd}` });
            setAuthMode('login');
         } else {
            setAuthError(t.msgWrong);
