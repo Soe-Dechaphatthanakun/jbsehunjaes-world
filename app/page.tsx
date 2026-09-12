@@ -608,19 +608,19 @@ export default function SweetieWorldApp() {
     };
   }, [isInitialLoad, currentUser?.role]);
 
-  // Admin သာလျှင် Auto-save အလုပ်လုပ်စေရန် ပြင်ဆင်ချက် (Write Limit လေလွင့်မှု ကာကွယ်ရန်)
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "users"), { data: users }); }, [users, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "shows"), { data: shows }); }, [shows, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "categories"), { data: categories }); }, [categories, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "platforms"), { data: platforms }); }, [platforms, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "promotions"), { data: promotions }); }, [promotions, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "faqs"), { data: faqs }); }, [faqs, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "pointRequests"), { data: pointRequests }); }, [pointRequests, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "notifications"), { data: notifications }); }, [notifications, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }); }, [adminLogs, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }); }, [paymentProviders, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }); }, [siteConfig, currentUser?.role]);
-useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) setDoc(doc(db, "SiteData", "movieViews"), { data: movieViews }); }, [movieViews, currentUser?.role]);
+  // 🌟 Admin သာလျှင် Auto-save အလုပ်လုပ်စေရန်နှင့် Write လေလွင့်မှုမှ ကာကွယ်ရန် (2 Seconds Delay ထည့်သွင်းထားသည်)
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "users"), { data: users }), 2000); return () => clearTimeout(t); } }, [users, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "shows"), { data: shows }), 2000); return () => clearTimeout(t); } }, [shows, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "categories"), { data: categories }), 2000); return () => clearTimeout(t); } }, [categories, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "platforms"), { data: platforms }), 2000); return () => clearTimeout(t); } }, [platforms, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "promotions"), { data: promotions }), 2000); return () => clearTimeout(t); } }, [promotions, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "faqs"), { data: faqs }), 2000); return () => clearTimeout(t); } }, [faqs, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "pointRequests"), { data: pointRequests }), 2000); return () => clearTimeout(t); } }, [pointRequests, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "notifications"), { data: notifications }), 2000); return () => clearTimeout(t); } }, [notifications, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }), 2000); return () => clearTimeout(t); } }, [adminLogs, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }), 2000); return () => clearTimeout(t); } }, [paymentProviders, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }), 2000); return () => clearTimeout(t); } }, [siteConfig, currentUser?.role]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "movieViews"), { data: movieViews }), 2000); return () => clearTimeout(t); } }, [movieViews, currentUser?.role]);
 
   // NEW: Direct Link ဖြင့် ဝင်လာပါက ဇာတ်ကားကို အလိုလို ဖွင့်ပေးမည်
   useEffect(() => {
@@ -897,36 +897,60 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
   setShowPwdOld(false); setShowPwdNew(false); setShowPwdConfirm(false);
 };
 
-  const handlePointSubmit = (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!currentUser || !selectedProvider || !idCodeInput.trim() || !amountInput.trim()) return;
-  const isDuplicate = pointRequests.some(r => r.idCode.trim().toLowerCase() === idCodeInput.trim().toLowerCase());
-  if (isDuplicate) return setAlertModal({ message: t.duplicateId });
-  const newReq: PointRequest = {
-    id: Date.now().toString(), username: currentUser.username, provider: selectedProvider.name,
-    idCode: idCodeInput.trim(), requestedAmount: Number(amountInput), date: new Date().toISOString(), status: 'pending'
-  };
-  const newNoti: NotificationData = {
-    id: Date.now().toString()+'_noti', targetUser: 'admin',
-    message: `Point Request from ${currentUser.username} (ID: ${idCodeInput.trim()}) - Amount: ${amountInput}`,
-    date: new Date().toISOString(), isRead: false, actionType: 'point_request'
-  };
-  
-  const updatedNotis = [newNoti, ...notifications];
-  const updatedReqs = [newReq, ...pointRequests];
-  
-  setNotifications(updatedNotis);
-  setPointRequests(updatedReqs);
-  
-  // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
-  setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
-  setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs });
+  const handlePointSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || !selectedProvider || !idCodeInput.trim() || !amountInput.trim()) return;
 
-  showToast(t.msgPointSent);
-  setIdCodeInput('');
-  setAmountInput('');
-  setPayStep('history');
-};
+    try {
+      // --- ၁။ Database ပေါ်ရှိ နောက်ဆုံး Point Requests ကို အရင်လှမ်းဆွဲမည် ---
+      let latestReqs = pointRequests;
+      const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
+      if (pSnap.exists() && pSnap.data().data) {
+         latestReqs = pSnap.data().data;
+      }
+
+      // --- ၂။ Duplicate ဖြစ်မဖြစ် စစ်ဆေးမည် ---
+      const isDuplicate = latestReqs.some((r: PointRequest) => r.idCode.trim().toLowerCase() === idCodeInput.trim().toLowerCase());
+      if (isDuplicate) return setAlertModal({ message: t.duplicateId });
+
+      const newReq: PointRequest = {
+        id: Date.now().toString(), username: currentUser.username, provider: selectedProvider.name,
+        idCode: idCodeInput.trim(), requestedAmount: Number(amountInput), date: new Date().toISOString(), status: 'pending'
+      };
+
+      const newNoti: NotificationData = {
+        id: Date.now().toString()+'_noti', targetUser: 'admin',
+        message: `Point Request from ${currentUser.username} (ID: ${idCodeInput.trim()}) - Amount: ${amountInput}`,
+        date: new Date().toISOString(), isRead: false, actionType: 'point_request'
+      };
+      
+      // --- ၃။ Noti များကိုလည်း နောက်ဆုံးအခြေအနေကို ဆွဲယူမည် ---
+      let latestNotis = notifications;
+      const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
+      if (nSnap.exists() && nSnap.data().data) {
+          latestNotis = nSnap.data().data;
+      }
+
+      const updatedNotis = [newNoti, ...latestNotis];
+      const updatedReqs = [newReq, ...latestReqs];
+      
+      setNotifications(updatedNotis);
+      setPointRequests(updatedReqs);
+      
+      // --- ၄။ Database သို့ ပြန်လည် သိမ်းဆည်းမည် (အခြားသူများ၏ Request များ အဖုံးမခံရတော့ပါ) ---
+      await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
+      await setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs });
+
+      showToast(t.msgPointSent);
+      setIdCodeInput('');
+      setAmountInput('');
+      setPayStep('history');
+      
+    } catch (error) {
+      console.error("Error submitting point request: ", error);
+      setAlertModal({ message: "Network Error. Please try again." });
+    }
+  };
 
   const handleAdminSaveUser = async () => {
   if (!editUserRemark.trim() && editUserModal.mode === 'edit') return setAlertModal({ message: "လုပ်ဆောင်ရသည့် အကြောင်းရင်း (Remark) ကို ထည့်ပေးပါ။" });
@@ -2860,33 +2884,9 @@ useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && 
       setShows(updatedShows);
       await setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); 
       
-      const newTitle = itemToSave.title_mm || itemToSave.title_en;
-      const firstEp = itemToSave.episodes && itemToSave.episodes.length > 0 ? itemToSave.episodes[0].epLabel : '';
-      
-      let notiMsg = `"${newTitle}" ဇာတ်လမ်းသစ် တင်လိုက်ပါပြီ။`;
-      if (firstEp.toLowerCase().includes('tailer') || firstEp.toLowerCase().includes('trailer')) {
-          notiMsg = `"${newTitle}" ဇာတ်ကားရဲ့ Trailer ကိုတင်ပေးထားပါတယ်။`;
-      } else if (firstEp) {
-          let displayEp = firstEp;
-          // 'ep' လို့ ပါလာမှသာ 'အပိုင်း' ဟု ပြောင်းပေးမည်၊ '1080 P' စသည်တို့ဆိုလျှင် မူလအတိုင်းထားမည်
-          if (/ep/i.test(firstEp)) {
-              displayEp = firstEp.replace(/ep/i, 'အပိုင်း');
-          }
-          notiMsg = `"${newTitle}" ဇာတ်လမ်းရဲ့ ${displayEp} အား တင်ပေးလိုက်ပါပြီ။`;
-      }
-
-      const newNoti: NotificationData = {
-         id: Date.now().toString()+'_noti',
-         targetUser: 'all',
-         message: notiMsg,
-         date: new Date().toISOString(),
-         isRead: false,
-         actionType: 'new_upload'
-      };
-      const updatedNotis = [newNoti, ...notifications];
-      setNotifications(updatedNotis);
-      await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis }); 
+      // ⚠️ ပြင်ဆင်ချက် - ဇာတ်ကားသစ်/အပိုင်းသစ် Noti များကို Database သို့ Save လုပ်ခြင်း အပြီးတိုင် ဖယ်ရှားလိုက်ပါပြီ
     }
+    
     showToast(t.msgUploaded);
     setNewVideo({episodes:[], title_en: '', title_mm: '', vipTelegramLink: '', pointsPerEp: 20});
     
