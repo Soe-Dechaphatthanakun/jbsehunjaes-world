@@ -437,7 +437,10 @@ export default function SweetieWorldApp() {
     setIsClient(true);
     const loadData = async () => {
       try {
-        
+        const fetchDoc = async (colName: string, setFn: any, defaultVal: any) => {
+           const snap = await getDoc(doc(db, "SiteData", colName));
+           if (snap.exists() && snap.data().data && snap.data().data.length > 0) { setFn(snap.data().data); } else if (defaultVal) { setFn(defaultVal); }
+        };
 
         // Data ဆွဲယူမည့် Function များကို သီးသန့်ခွဲထုတ်ခြင်း
         const fetchConfig = async () => {
@@ -478,39 +481,21 @@ export default function SweetieWorldApp() {
             if (providerSnap.exists() && providerSnap.data().data) { setPaymentProviders(providerSnap.data().data); } else { setPaymentProviders(INITIAL_PROVIDERS); }
         };
 
-        const fetchDoc = async (colName: string, setFn: any, defaultVal: any) => {
-           const snap = await getDoc(doc(db, "SiteData", colName));
-           if (snap.exists() && snap.data().data && snap.data().data.length > 0) { 
-               setFn(snap.data().data); return snap.data().data; 
-           } else if (defaultVal) { 
-               setFn(defaultVal); return defaultVal; 
-           }
-           return null;
-        };
-
-        // 🌟 Bandwidth Optimization (1): API Request များကို ခွဲခြား၍ ဆွဲယူခြင်း
-        const [ loadedUsers ] = await Promise.all([
-            fetchDoc("users", setUsers, INITIAL_USERS), // Users ကို အရင်ဆွဲမည်
+        // API Request အားလုံးကို အစဉ်လိုက်မဟုတ်ဘဲ တစ်ပြိုင်နက်တည်း (Promise.all ဖြင့်) ဆွဲယူခြင်း
+        await Promise.all([
             fetchConfig(),
+            fetchDoc("users", setUsers, INITIAL_USERS),
             fetchShows(),
             fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
             fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
             fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: "Jbsehunjae's World မှာ ကြိုဆိုပါတယ်!" }]),
             fetchDoc("faqs", setFaqs, [{ id: '1', title_en: 'How to buy points?', body_en: 'Transfer via KPay or WavePay. Then submit your Transaction ID.', title_mm: 'Point ဘယ်လိုဝယ်ရမလဲ?', body_mm: 'KPay, WavePay မှ ငွေလွှဲပါ။ ပြီးလျှင် Transaction ID အား ထည့်ပေးပါ။' }]),
+            fetchDoc("pointRequests", setPointRequests, []),
             fetchDoc("notifications", setNotifications, []),
+            fetchDoc("adminLogs", setAdminLogs, []),
             fetchMovieViews(),
             fetchPaymentProviders()
         ]);
-
-        // 🌟 Bandwidth Optimization (2): သာမန် User များအတွက် မလိုအပ်သော Data အထုပ်ကြီးများ (Logs, Requests) ကို မဆွဲတော့ဘဲ Admin ဖြစ်မှသာ ဆွဲမည်
-        const savedUser = localStorage.getItem('jbsehunjaes_auth');
-        const currentUserData = loadedUsers ? loadedUsers.find((u: any) => u.username === savedUser) : null;
-        if (currentUserData && currentUserData.role === 'admin') {
-            await Promise.all([
-                fetchDoc("pointRequests", setPointRequests, []),
-                fetchDoc("adminLogs", setAdminLogs, [])
-            ]);
-        }
         
         setIsDataFetched(true); 
       } catch(e) { 
