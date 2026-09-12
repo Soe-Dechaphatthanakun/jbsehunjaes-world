@@ -22,75 +22,84 @@ export async function POST(request: Request) {
     const BOT_TOKEN = "8962875521:AAHhx5Bo6Fa73QgEiYWWZYzKmoGWkHbe2K4"; // ⚠️ သင့် Bot Token ကို ဤနေရာတွင် ထည့်ပါ
     const ADMIN_GROUP_ID = "-1003824552410"; // ⚠️ Report ပို့ရန် သင့် Admin Group ID (ဥပမာ -100123...)
 
-    // 🌟 NEW: Bot သို့ DM (Start Command) ဖြင့် ဝင်လာသော User များအား Protect Content ဖြင့် ဗီဒီယိုပို့ပေးခြင်း 🌟
+    // 🌟 BOT DM (Start Command) ဖြင့် ဝင်လာသော User များအား Protect Content ဖြင့် ဗီဒီယိုပို့ပေးခြင်း
     if (body.message && body.message.chat && body.message.chat.type === 'private' && body.message.text && body.message.text.startsWith('/start ')) {
        const payload = body.message.text.split(' ')[1];
        if (payload) {
           try {
-             // Decode payload (ချုံ့ထားသော User Hash ကို ပြန်ဖြည်ခြင်း)
+             // Decode payload (Username ကို ပြန်ဖြည်ခြင်း)
              let b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
              while (b64.length % 4) b64 += '=';
              const decodedStr = atob(b64);
-             const [uHash, showId, epIndexStr] = decodedStr.split(':::');
+             
+             // Payload ဖြည်ပြီးနောက် Username ကို အတိအကျရမည်
+             const [username, showId, epIndexStr] = decodedStr.split(':::');
              const epIndex = parseInt(epIndexStr, 10);
 
-             // Firebase မှ User အချက်အလက် စစ်ဆေးခြင်း
-             const usersSnap = await getDoc(doc(db, "SiteData", "users"));
-             const users = usersSnap.exists() ? usersSnap.data().data : [];
-             const user = users.find((u: any) => new Date(u.createdAt || 0).getTime().toString(36) === uHash);
-             const username = user ? user.username : 'Unknown User';
+             // ⚠️ ပြင်ဆင်ချက် (၁): စနစ်သစ်ဖြစ်သော 'Users' Collection တွင် Username ဖြင့် တိုက်ရိုက် သွားရှာမည်
+             const userSnap = await getDoc(doc(db, "Users", username));
+             
+             if (userSnap.exists()) {
+                 const user = userSnap.data();
 
-             if (user && user.unlockedEpisodes && user.unlockedEpisodes.includes(`${showId}_${epIndex}`)) {
-                 // User အမှန်တကယ် ဝယ်ယူထားကြောင်း အတည်ပြုပြီးပါပြီ
-                 const showsSnap = await getDoc(doc(db, "SiteData", "shows"));
-                 const shows = showsSnap.exists() ? showsSnap.data().data : [];
-                 const show = shows.find((s: any) => s.id === showId);
+                 // User အမှန်တကယ် ဝယ်ယူထားကြောင်း အတည်ပြုခြင်း
+                 if (user.unlockedEpisodes && user.unlockedEpisodes.includes(`${showId}_${epIndex}`)) {
+                     
+                     const showsSnap = await getDoc(doc(db, "SiteData", "shows"));
+                     const shows = showsSnap.exists() ? showsSnap.data().data : [];
+                     const show = shows.find((s: any) => s.id === showId);
 
-                 if (show && show.episodes && show.episodes[epIndex] && show.episodes[epIndex].links && show.episodes[epIndex].links.length > 0) {
-                     const tgUrl = show.episodes[epIndex].links[0].url; // Admin ၏ Master Channel မှ Link
-                     let fromChatId = '';
-                     let messageId = '';
+                     if (show && show.episodes && show.episodes[epIndex] && show.episodes[epIndex].links && show.episodes[epIndex].links.length > 0) {
+                         const tgUrl = show.episodes[epIndex].links[0].url; // Admin ၏ Master Channel မှ Link
+                         let fromChatId = '';
+                         let messageId = '';
 
-                     if (tgUrl.includes('/c/')) {
-                         const parts = tgUrl.split('/c/')[1].split('/');
-                         fromChatId = '-100' + parts[0];
-                         messageId = parts[1];
-                     } else {
-                         const parts = tgUrl.replace('https://t.me/', '').split('/');
-                         fromChatId = '@' + parts[0];
-                         messageId = parts[1];
+                         if (tgUrl.includes('/c/')) {
+                             const parts = tgUrl.split('/c/')[1].split('/');
+                             fromChatId = '-100' + parts[0];
+                             messageId = parts[1];
+                         } else {
+                             const parts = tgUrl.replace('https://t.me/', '').split('/');
+                             fromChatId = '@' + parts[0];
+                             messageId = parts[1];
+                         }
+
+                         // Telegram သို့ လုံခြုံရေးအပြည့်ဖြင့် (Protect Content) ပို့ဆောင်ခြင်း
+                         const copyRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/copyMessage`, {
+                             method: 'POST',
+                             headers: { 'Content-Type': 'application/json' },
+                             body: JSON.stringify({
+                                 chat_id: body.message.chat.id,
+                                 from_chat_id: fromChatId,
+                                 message_id: messageId,
+                                 protect_content: true // ဖုန်းထဲ Save / Forward / Screen Record လုံးဝ မရအောင် ပိတ်သည့် စနစ်
+                             })
+                         });
+
+                         const copyData = await copyRes.json();
+                         if (copyData.ok) {
+                             // Admin Group သို့ အောင်မြင်ကြောင်း Report ပို့ခြင်း
+                             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ chat_id: ADMIN_GROUP_ID, text: `✅ Delivered: [${username}] ထံသို့ [${show.title_mm || show.title_en} - ${show.episodes[epIndex].epLabel}] အား အောင်မြင်စွာ ပို့ဆောင်ပြီးပါပြီ။ (Protected)` })
+                             });
+                         } else {
+                             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "Admin ဖက်မှ လမ်းကြောင်း ချိတ်ဆက်မှု မှားယွင်းနေပါသည်။" })
+                             });
+                         }
                      }
-
-                     // Telegram သို့ လုံခြုံရေးအပြည့်ဖြင့် (Protect Content) ပို့ဆောင်ခြင်း
-                     const copyRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/copyMessage`, {
-                         method: 'POST',
-                         headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({
-                             chat_id: body.message.chat.id,
-                             from_chat_id: fromChatId,
-                             message_id: messageId,
-                             protect_content: true // 🌟 ဖုန်းထဲ Save / Forward / Screen Record လုံးဝ မရအောင် ပိတ်သည့် စနစ် 🌟
-                         })
+                 } else {
+                     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                         method: 'POST', headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ သင်သည် ဤအပိုင်းအား ဝယ်ယူထားခြင်း မရှိသေးပါ။" })
                      });
-
-                     const copyData = await copyRes.json();
-                     if (copyData.ok) {
-                         // Admin Group သို့ အောင်မြင်ကြောင်း Report ပို့ခြင်း
-                         await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                             body: JSON.stringify({ chat_id: ADMIN_GROUP_ID, text: `✅ Delivered: [${username}] ထံသို့ [${show.title_mm || show.title_en} - ${show.episodes[epIndex].epLabel}] အား အောင်မြင်စွာ ပို့ဆောင်ပြီးပါပြီ။ (Protected)` })
-                         });
-                     } else {
-                         await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                             body: JSON.stringify({ chat_id: body.message.chat.id, text: "Admin ဖက်မှ လမ်းကြောင်း ချိတ်ဆက်မှု မှားယွင်းနေပါသည်။" })
-                         });
-                     }
                  }
              } else {
                  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                      method: 'POST', headers: { 'Content-Type': 'application/json' },
-                     body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ သင်သည် ဤအပိုင်းအား ဝယ်ယူထားခြင်း မရှိသေးပါ။" })
+                     body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ သင့်အကောင့်ကို ရှာမတွေ့ပါ။ Website တွင် Login အရင်ဝင်ပါ။" })
                  });
              }
           } catch (e) {
@@ -100,16 +109,11 @@ export async function POST(request: Request) {
        return NextResponse.json({ success: true });
     }
 
-    // 🌟 အောက်တွင် သင်၏ လက်ရှိ Channel Post ဖမ်းသော (Auto-Link) Code အဟောင်းအတိုင်း ဆက်လက်ရှိနေမည်... 🌟
-    // 🌟 ပြင်ဆင်ချက် (၁) - Channel သာမက Group/Private Chat က Edit လုပ်တာတွေကိုပါ ဖမ်းနိုင်ရန် 🌟
+    // 🌟 CHANNEL AUTO-LINK POST 🌟
     const post = body.channel_post || body.edited_channel_post || body.message || body.edited_message;
-    
     if (!post) return NextResponse.json({ success: true, msg: 'Not a valid post' });
 
-    // စာသား သို့မဟုတ် ပုံ/ဗီဒီယိုရဲ့ Caption ကို ယူခြင်း
     const content = post.text || post.caption || '';
-    
-    // 🌟 ပြင်ဆင်ချက် (၂) - vid- သာမက cw-1 ကဲ့သို့သော ID များနှင့် အကြီး/အသေး မှားရိုက်မိတာတွေကိုပါ အကုန်လက်ခံရန် (/i ကိုသုံးထားသည်) 🌟
     const match = content.match(/#([a-zA-Z0-9_-]+)-ep(\d+)/i);
     if (!match) return NextResponse.json({ success: true, msg: 'No auto-link tag found' });
 
@@ -134,13 +138,11 @@ export async function POST(request: Request) {
       let isUpdated = false;
 
       shows = shows.map((show: any) => {
-        // 🌟 ပြင်ဆင်ချက် (၃) - Telegram မှာ အကြီး/အသေး မှားရိုက်မိခဲ့ရင်တောင် အလုပ်လုပ်အောင် toLowerCase() ဖြင့် စစ်ဆေးခြင်း 🌟
         if (show.id.toLowerCase() === movieId.toLowerCase()) {
           if (show.episodes && show.episodes[epNumber - 1]) {
             const ep = show.episodes[epNumber - 1];
             if (!ep.links) ep.links = [];
             
-            // Link ထပ်နေတာမျိုး မဖြစ်အောင် စစ်ဆေးခြင်း
             const alreadyExists = ep.links.some((l: any) => l.url === tgLink);
             if (!alreadyExists) {
               ep.links.push({ platform: 'Telegram', url: tgLink });
@@ -153,51 +155,14 @@ export async function POST(request: Request) {
 
       // ပြင်ဆင်ပြီးသား Data ကို Database ထဲ Save ခြင်း (နှင့် အပေါ်ဆုံးသို့ ရွှေ့ခြင်း)
       if (isUpdated) {
-        let updatedTitle = "";
-        let exactLabel = ""; // 🌟 Admin ပေးခဲ့သော နာမည်အမှန်ကို ဖမ်းယူမည့် နေရာ
-        
         const updatedShowIndex = shows.findIndex((s: any) => s.id.toLowerCase() === movieId.toLowerCase());
         if (updatedShowIndex !== -1) {
-          updatedTitle = shows[updatedShowIndex].title_mm || shows[updatedShowIndex].title_en || 'ဇာတ်ကား';
           const updatedShow = shows.splice(updatedShowIndex, 1)[0];
-          
-          // 🌟 Array ရဲ့ Index ဟာ 0 ကနေစတဲ့အတွက် epNumber - 1 နေရာကနေ "EP 6 (Part-1)" စသည့် နာမည်အမှန်ကို လှမ်းယူပါမည် (Memory ပေါ်ကနေပဲ ယူတာဖြစ်လို့ Read Cost လုံးဝ မတက်ပါ)
-          exactLabel = updatedShow.episodes[epNumber - 1]?.epLabel || `အပိုင်း ${epNumber}`;
-          
           shows.unshift(updatedShow); // ဇာတ်ကားကို အပေါ်ဆုံးသို့ ပို့လိုက်ပါပြီ
         }
         await setDoc(showsRef, { data: shows });
 
-        // 🌟 Noti စာသား တည်ဆောက်ခြင်း 
-        let displayEp = exactLabel;
-        if (/ep/i.test(exactLabel)) {
-            // 'EP' ကို 'အပိုင်း' ဖြင့် အစားထိုးမည်။ အနောက်က ' 6 (Part-1)' သည် မပျက်ဘဲ အတိုင်းဆက်ကျန်နေမည်
-            displayEp = exactLabel.replace(/ep/i, 'အပိုင်း');
-        } else if (exactLabel.toLowerCase().includes('tailer') || exactLabel.toLowerCase().includes('trailer')) {
-            displayEp = 'Trailer';
-        }
-
-        let notiMsg = `"${updatedTitle}" ဇာတ်လမ်းရဲ့ ${displayEp} အား တင်ပေးလိုက်ပါပြီ။`;
-        if (displayEp === 'Trailer') {
-            notiMsg = `"${updatedTitle}" ဇာတ်ကားရဲ့ Trailer ကိုတင်ပေးထားပါတယ်။`;
-        }
-
-        // --- NEW: SEND NOTIFICATION TO ALL USERS FOR EPISODE UPDATE ---
-        const notiRef = doc(db, "SiteData", "notifications");
-        const notiSnap = await getDoc(notiRef);
-        if (notiSnap.exists()) {
-           const notis = notiSnap.data().data || [];
-           const newNoti = {
-             id: Date.now().toString()+'_noti',
-             targetUser: 'all',
-             message: notiMsg, // 🌟 တွက်ချက်ထားသော စာသားကို ဤနေရာတွင် ထည့်လိုက်ပါပြီ
-             date: new Date().toISOString(),
-             isRead: false,
-             actionType: 'ep_update'
-           };
-           await setDoc(notiRef, { data: [newNoti, ...notis] });
-        }
-
+        // ⚠️ ပြင်ဆင်ချက် (၂) : User အားလုံးဆီ အပိုင်းသစ် Noti ပို့ပြီး Database ထဲ သိမ်းသည့်စနစ်ကို အပြီးတိုင် ဖယ်ရှားလိုက်ပါပြီ။ (Write Limit မကုန်စေရန်) 
         console.log(`Auto-linked ${movieId} Episode ${epNumber} and moved to top`);
       }
     }

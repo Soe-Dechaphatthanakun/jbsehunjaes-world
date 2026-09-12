@@ -3245,9 +3245,8 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 
                              if(isReleased) {
                                 if (isVipOnly && !isLongSeries && isVipUnlocked) {
-                                  // Bot ဆီသို့ DM သွားမည့် လုံခြုံရေး လမ်းကြောင်း (Payload ကို အတိုဆုံးဖြစ်အောင် ချုံ့ထားသည်)
-                                  const uHash = new Date(currentUser.createdAt || 0).getTime().toString(36);
-                                  const payloadStr = `${uHash}:::${selectedShow.id}:::${idx}`;
+                                  // Bot ဆီသို့ DM သွားမည့် လမ်းကြောင်း (Database သစ်အတွက် Username ကိုပါ တွဲပို့မည်)
+                              	  const payloadStr = `${currentUser.username}:::${selectedShow.id}:::${idx}`;
                                   const base64Url = btoa(payloadStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
                                   const botUsername = "Jbsehunjae_vip_bot"; // ⚠️ သင်၏ Telegram Bot Username ကို ဤနေရာတွင် ထည့်ပါ
                                   window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
@@ -3992,8 +3991,9 @@ setCurrentUser(updatedUser);
                       setMiniVipModalShow(null);
                       showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
                       
-                      const uHash = new Date(currentUser.createdAt || 0).getTime().toString(36);
-                      const payloadStr = `${uHash}:::${miniVipModalShow.show.id}:::${miniVipModalShow.epIndex}`;
+                      showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
+
+                      const payloadStr = `${currentUser.username}:::${miniVipModalShow.show.id}:::${miniVipModalShow.epIndex}`;
                       const base64Url = btoa(payloadStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
                       const botUsername = "Jbsehunjae_vip_bot"; // ⚠️ သင်၏ Telegram Bot Username
                       window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
