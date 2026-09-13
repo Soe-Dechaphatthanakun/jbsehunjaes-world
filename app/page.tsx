@@ -1200,16 +1200,38 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     }
     isSyncing.current = true;
     try {
-        const target = adminUserSearch.trim().toLowerCase();
-        if (target.includes('@')) {
-            const emailQ = query(collection(db, "Users"), where("email", "==", target));
+        const exactTarget = adminUserSearch.trim();
+        const lowerTarget = exactTarget.toLowerCase();
+        let targetUsername = exactTarget;
+
+        // ၁။ Transaction ID ဟုတ်မဟုတ် အရင်စစ်မည် (Point Requests / History ထဲတွင် အရင်ရှာမည်)
+        const foundTxn = pointRequests.find(r => r.idCode.toLowerCase() === lowerTarget);
+        if (foundTxn) {
+            targetUsername = foundTxn.username; // Txn ID မှန်ကန်ပါက သက်ဆိုင်ရာ Username ကို ဆွဲထုတ်မည်
+            showToast(`Txn ID ဖြင့် User: ${targetUsername} ကို ရှာတွေ့ပါသည်`);
+        }
+
+        if (exactTarget.includes('@')) {
+            // ၂။ Email ဖြင့် ရှာမည်
+            const emailQ = query(collection(db, "Users"), where("email", "==", lowerTarget));
             const emailSnap = await getDocs(emailQ);
             if (!emailSnap.empty) setUsers(emailSnap.docs.map(d => d.data() as UserData));
             else { setUsers([]); showToast("User မတွေ့ပါ။ (Email မှားနေနိုင်ပါသည်)"); }
         } else {
-            const docSnap = await getDoc(doc(db, "Users", target));
-            if (docSnap.exists()) setUsers([docSnap.data() as UserData]);
-            else { setUsers([]); showToast("User မတွေ့ပါ။ (Username အတိအကျ ဖြစ်ရပါမည်)"); }
+            // ၃။ Username (သို့မဟုတ် Txn ID မှ ရလာသော Username) ဖြင့် ရှာမည်
+            const docSnap = await getDoc(doc(db, "Users", targetUsername));
+            if (docSnap.exists()) {
+                setUsers([docSnap.data() as UserData]);
+            } else {
+                const uQuery = query(collection(db, "Users"), where("username", "==", targetUsername));
+                const uSnap = await getDocs(uQuery);
+                if (!uSnap.empty) {
+                    setUsers(uSnap.docs.map(d => d.data() as UserData));
+                } else {
+                    setUsers([]); 
+                    showToast("ရှာမတွေ့ပါ။ (Username, Email သို့မဟုတ် ငွေသွင်း ID အတိအကျ ဖြစ်ရပါမည်)"); 
+                }
+            }
         }
         setUsersPage(1);
     } catch (e) {
