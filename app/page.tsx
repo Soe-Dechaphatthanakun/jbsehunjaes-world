@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer } from "firebase/firestore";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
   Globe, Menu, Home, HelpCircle, Gift, Info, Send, Phone,
@@ -225,6 +225,7 @@ export default function SweetieWorldApp() {
 
   // DATA STATES
   const [users, setUsers] = useState<UserData[]>(INITIAL_USERS);
+  const [totalUsersCount, setTotalUsersCount] = useState(0); // 🌟 Dashboard တွင် User အားလုံးအရေအတွက် ပြနိုင်ရန်
   const [shows, setShows] = useState<VideoCardData[]>(INITIAL_SHOWS);
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [platforms, setPlatforms] = useState<string[]>(INITIAL_PLATFORMS);
@@ -571,9 +572,17 @@ export default function SweetieWorldApp() {
       if (sSnap.exists() && sSnap.data().data) {
          setShows(prev => JSON.stringify(prev) !== JSON.stringify(sSnap.data().data) ? sSnap.data().data : prev);
       }
-      // Admin ဆိုရင် User အားလုံးကိုဆွဲမည်၊ Normal User ဆိုရင် သူ့အကောင့်တစ်ခုတည်းကိုပဲ ဆွဲမည် (Read Limit ကာကွယ်ရန်)
+      // Admin ဆိုရင် User အားလုံးကို မဆွဲတော့ဘဲ Active ဖြစ်သော User (၅၀) ကိုသာ ဆွဲမည် (Read Limit ကာကွယ်ရန်)
   if (currentUser?.role === 'admin') {
-     const uSnap = await getDocs(collection(db, "Users"));
+     const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(50));
+     const uSnap = await getDocs(uQuery);
+     
+     // 🌟 Dashboard အတွက် Total Users ကို Data မဆွဲဘဲ Count သီးသန့် ရေတွက်မည် 🌟
+     try {
+         const countSnap = await getCountFromServer(collection(db, "Users"));
+         setTotalUsersCount(countSnap.data().count);
+     } catch (e) { console.error("Count Error", e); }
+
      if (!uSnap.empty) {
         const fetchedUsers = uSnap.docs.map(d => d.data() as UserData);
         setUsers(fetchedUsers);
@@ -628,12 +637,9 @@ export default function SweetieWorldApp() {
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "platforms"), { data: platforms }), 2000); return () => clearTimeout(t); } }, [platforms, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "promotions"), { data: promotions }), 2000); return () => clearTimeout(t); } }, [promotions, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "faqs"), { data: faqs }), 2000); return () => clearTimeout(t); } }, [faqs, currentUser?.role]);
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "pointRequests"), { data: pointRequests }), 2000); return () => clearTimeout(t); } }, [pointRequests, currentUser?.role]);
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "notifications"), { data: notifications }), 2000); return () => clearTimeout(t); } }, [notifications, currentUser?.role]);
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "adminLogs"), { data: adminLogs }), 2000); return () => clearTimeout(t); } }, [adminLogs, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }), 2000); return () => clearTimeout(t); } }, [paymentProviders, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }), 2000); return () => clearTimeout(t); } }, [siteConfig, currentUser?.role]);
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "movieViews"), { data: movieViews }), 2000); return () => clearTimeout(t); } }, [movieViews, currentUser?.role]);
+ 
 
   // NEW: Direct Link ဖြင့် ဝင်လာပါက ဇာတ်ကားကို အလိုလို ဖွင့်ပေးမည်
   useEffect(() => {
@@ -1183,8 +1189,39 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     return matchCat && matchSearch;
   });
 
-  const adminFilteredUsers = users.filter(u => u.username.toLowerCase().includes(adminUserSearch.toLowerCase()) || u.email.toLowerCase().includes(adminUserSearch.toLowerCase()))
-    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  // 🌟 SERVER-SIDE USER SEARCH FUNCTION 🌟
+  const handleSearchUser = async () => {
+    if (!adminUserSearch.trim()) {
+        // ဘာမှ မရိုက်ဘဲ Search နှိပ်ပါက Active 50 ကို ပြန်ခေါ်မည်
+        const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(50));
+        const uSnap = await getDocs(uQuery);
+        setUsers(uSnap.docs.map(d => d.data() as UserData));
+        return;
+    }
+    isSyncing.current = true;
+    try {
+        const target = adminUserSearch.trim().toLowerCase();
+        if (target.includes('@')) {
+            const emailQ = query(collection(db, "Users"), where("email", "==", target));
+            const emailSnap = await getDocs(emailQ);
+            if (!emailSnap.empty) setUsers(emailSnap.docs.map(d => d.data() as UserData));
+            else { setUsers([]); showToast("User မတွေ့ပါ။ (Email မှားနေနိုင်ပါသည်)"); }
+        } else {
+            const docSnap = await getDoc(doc(db, "Users", target));
+            if (docSnap.exists()) setUsers([docSnap.data() as UserData]);
+            else { setUsers([]); showToast("User မတွေ့ပါ။ (Username အတိအကျ ဖြစ်ရပါမည်)"); }
+        }
+        setUsersPage(1);
+    } catch (e) {
+        console.error(e);
+        showToast("ရှာဖွေရာတွင် အမှားအယွင်းဖြစ်နေပါသည်။");
+    } finally {
+        isSyncing.current = false;
+    }
+  };
+
+  // Server-side search & limit သုံးထားသဖြင့် local filter အသစ်ထပ်မလုပ်တော့ပါ။ 
+  const adminFilteredUsers = [...users].sort((a, b) => new Date(b.lastLoginAt || 0).getTime() - new Date(a.lastLoginAt || 0).getTime());
   const paginatedUsers = adminFilteredUsers.slice((usersPage - 1) * usersPerPage, usersPage * usersPerPage);
 
   const adminPendingPoints = pointRequests.filter(p => p.status === 'pending');
@@ -1648,7 +1685,8 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                    const thirtyDaysAgo = new Date();
                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
                    
-                   const totalUsers = users.length;
+                   // 🌟 Admin အတွက် Server မှ ရေတွက်ထားသော Total Count ကို ပြမည်
+                   const totalUsers = totalUsersCount || users.length;
                    const activeUsers = users.filter(u => u.lastLoginAt && new Date(u.lastLoginAt) >= thirtyDaysAgo).length;
                    const inactiveUsers = totalUsers - activeUsers;
                    const totalPoints = users.reduce((sum, u) => sum + (u.points || 0), 0);
@@ -1965,13 +2003,17 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                    
                    {/* User Search & Add User Section */}
                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 min-w-[600px]">
-                      <div className="relative w-full sm:w-72">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                        <input 
-                          type="text" placeholder={t.searchUser} value={adminUserSearch}
-                          onChange={e => {setAdminUserSearch(e.target.value); setUsersPage(1);}}
-                          className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" 
-                        />
+                      <div className="relative w-full sm:w-[400px] flex gap-2">
+                        <div className="relative flex-1">
+                           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                           <input 
+                             type="text" placeholder="Search Exact Username or Email..." value={adminUserSearch}
+                             onChange={e => setAdminUserSearch(e.target.value)}
+                             onKeyDown={e => e.key === 'Enter' && handleSearchUser()}
+                             className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2.5 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" 
+                           />
+                        </div>
+                        <button onClick={handleSearchUser} className="bg-zinc-800 hover:bg-zinc-700 px-4 py-2.5 rounded-lg text-xs font-bold text-white transition border border-zinc-700 shadow">Search</button>
                       </div>
                       <button onClick={() => {
                         setEditUserForm({username: '', email: '', password: '', role: 'user', points: 0, vip: false, unlockedShows: [], createdAt: '', lastLoginAt: '', pointHistory: []});
@@ -2102,8 +2144,13 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                    message: `ID ${req.idCode} အတွက် ပယ်ချလိုက်ပါသည်။ Remark ကိုဖတ်ရန်နှိပ်ပါ။`, detail: reason,
                                    date: new Date().toISOString(), isRead: false, actionType: 'point_reject'
                                  };
-                                 setPointRequests(pointRequests.map((p): PointRequest => p.id === req.id ? { ...p, status: 'rejected', remark: reason } : p));
-                                 setNotifications([newNoti, ...notifications]);
+                                 const updatedReqs = pointRequests.map((p): PointRequest => p.id === req.id ? { ...p, status: 'rejected', remark: reason } : p);
+                                 const updatedNotis = [newNoti, ...notifications];
+                                 setPointRequests(updatedReqs);
+                                 setNotifications(updatedNotis);
+                                 // Firebase သို့ တိုက်ရိုက် Save မည်
+                                 setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs });
+                                 setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
                                  showToast("Request Rejected");
                                }
                              });
@@ -2167,6 +2214,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                onConfirm: () => {
                                  const remaining = pointRequests.filter(r => !recordsToDelete.includes(r));
                                  setPointRequests(remaining);
+                                 setDoc(doc(db, "SiteData", "pointRequests"), { data: remaining }); // 🌟 ဤစာကြောင်း ထပ်ဖြည့်ပါ
                                  setBulkDeleteDateFrom('');
                                  setBulkDeleteDateTo('');
                                  showToast(`${recordsToDelete.length} records deleted.`);
@@ -2227,7 +2275,9 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                  setConfirmModal({
                                    message: t.confirmDelDesc,
                                    onConfirm: () => {
-                                      setPointRequests(pointRequests.filter(p => p.id !== req.id));
+                                      const updatedReqs = pointRequests.filter(p => p.id !== req.id);
+                                      setPointRequests(updatedReqs);
+                                      setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs }); // Firebase ပေါ်မှပါ ဖျက်မည်
                                       showToast(t.msgDeleted);
                                    }
                                  });
@@ -2289,6 +2339,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                onConfirm: () => {
                                  const remaining = adminLogs.filter(r => !logsToDelete.includes(r));
                                  setAdminLogs(remaining);
+                                 setDoc(doc(db, "SiteData", "adminLogs"), { data: remaining }); // 🌟 ဤစာကြောင်း ထပ်ဖြည့်ပါ
                                  setAdminLogBulkDateFrom('');
                                  setAdminLogBulkDateTo('');
                                  showToast(`${logsToDelete.length} logs deleted.`);
@@ -2331,7 +2382,12 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                           <button onClick={() => {
                             setConfirmModal({
                               message: t.confirmDelDesc,
-                              onConfirm: () => { setAdminLogs(adminLogs.filter(p => p.id !== log.id)); showToast(t.msgDeleted); }
+                              onConfirm: () => { 
+                                  const updatedLogs = adminLogs.filter(p => p.id !== log.id);
+                                  setAdminLogs(updatedLogs); 
+                                  setDoc(doc(db, "SiteData", "adminLogs"), { data: updatedLogs }); // Firebase ပေါ်မှပါ ဖျက်မည်
+                                  showToast(t.msgDeleted); 
+                              }
                             });
                           }} className="p-2 bg-zinc-800 rounded text-red-400 hover:bg-zinc-700 transition"><Trash2 className="w-4 h-4"/></button>
                         </div>
