@@ -2132,16 +2132,43 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
       date: new Date().toISOString(), isRead: false, actionType: 'point_approve'
     };
 
-    const updatedUsers = users.map(u => u.username === req.username ? { ...u, points: u.points + amount } : u);
-    const updatedPointReqs = pointRequests.map((p): PointRequest => p.id === req.id ? { ...p, status: 'approved', amount } : p);
-    const updatedNotis = [newNoti, ...notifications];
+    // 🌟 FIX: User Data ကို Firebase မှ တိုက်ရိုက်လှမ်းဆွဲမည် (Limit 50 ထဲ မပါလည်း Error မတက်တော့ပါ)
+    const userRef = doc(db, "Users", req.username);
+    const userSnap = await getDoc(userRef);
+    
+    if (!userSnap.exists()) {
+        showToast("Error: ဤ User ကို Database တွင် ရှာမတွေ့ပါ။");
+        isSyncing.current = false;
+        return;
+    }
+    const userData = userSnap.data() as UserData;
+    const updatedUser = { ...userData, points: (userData.points || 0) + amount };
 
-    setUsers(updatedUsers);
+    // ၁။ User ဆီသို့ Point အတိအကျ ပေါင်းထည့်မည် (Firebase ပေါ် တိုက်ရိုက် Save မည်)
+    await setDoc(userRef, updatedUser);
+
+    // (UI ပေါ်ရှိ Local Users State တွင် ပါဝင်နေပါက Update လုပ်ပေးမည်)
+    setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUser : u));
+
+    // ၂။ Request နှင့် Noti များကို နောက်ဆုံး Database အခြေအနေနှင့် ပေါင်းပြီး Update လုပ်မည်
+    const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
+    let latestReqs = pointRequests;
+    if (pSnap.exists() && pSnap.data().data) {
+        latestReqs = pSnap.data().data;
+    }
+    const updatedPointReqs = latestReqs.map((p): PointRequest => p.id === req.id ? { ...p, status: 'approved', amount } : p);
+
+    const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
+    let latestNotis = notifications;
+    if (nSnap.exists() && nSnap.data().data) {
+        latestNotis = nSnap.data().data;
+    }
+    const updatedNotis = [newNoti, ...latestNotis];
+
     setPointRequests(updatedPointReqs);
     setNotifications(updatedNotis);
 
-    // Database ပေါ် သေချာရောက်အောင် သိမ်းမည်
-    await setDoc(doc(db, "Users", req.username), updatedUsers.find(u => u.username === req.username));
+    // ၃။ Firebase သို့ အပြီးသတ် Save မည်
     await setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedPointReqs });
     await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
 
