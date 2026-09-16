@@ -459,12 +459,12 @@ export default function SweetieWorldApp() {
         };
 
         const fetchShows = async () => {
-            // ၁။ Shows Collection အသစ်မှ အရင်လှမ်းဆွဲမည်
             const showsCol = collection(db, "Shows");
             const showsSnap = await getDocs(showsCol);
 
             if (!showsSnap.empty) {
                const loadedShows = showsSnap.docs.map(d => d.data() as VideoCardData);
+               loadedShows.sort((a, b) => b.id.localeCompare(a.id));
                setShows(loadedShows);
             } else {
                // ၂။ Shows Collection အသစ်တွင် Data မရှိသေးပါက အဟောင်း (SiteData/shows) မှ ဆွဲပြီး Auto-Migrate ပြုလုပ်မည်
@@ -591,6 +591,7 @@ export default function SweetieWorldApp() {
       const sSnap = await getDocs(collection(db, "Shows"));
       if (!sSnap.empty) {
          const latestShows = sSnap.docs.map(d => d.data() as VideoCardData);
+	 latestShows.sort((a, b) => b.id.localeCompare(a.id));
          setShows(prev => JSON.stringify(prev) !== JSON.stringify(latestShows) ? latestShows : prev);
       }
       // Admin ဆိုရင် User အားလုံးကို မဆွဲတော့ဘဲ Active ဖြစ်သော User (၅၀) ကိုသာ ဆွဲမည် (Read Limit ကာကွယ်ရန်)
@@ -2133,7 +2134,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                <div className="flex justify-end gap-2">
                                  <button onClick={() => setUserDetailModal(u)} className="p-2 bg-zinc-800 rounded text-emerald-400 hover:bg-zinc-700 transition" title="View Details"><Eye className="w-4 h-4"/></button>
                                  <button onClick={() => {setEditUserForm({...u}); setEditUserRemark(''); setEditUserModal({isOpen: true, mode: 'edit', oldUsername: u.username});}} className="p-2 bg-zinc-800 rounded text-blue-400 hover:bg-zinc-700 transition" title="Edit User"><Edit className="w-4 h-4"/></button>
-                                 // ✅ အစားထိုးရမည့် Code အမှန်
+                                 
                                  {u.username !== currentUser.username && (
                                    <button onClick={() => setConfirmModal({
                                       message: t.confirmDelDesc,
