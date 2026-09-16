@@ -1526,7 +1526,18 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
               </div>
 
               {/* BIGGER POINTS BUTTON */}
-              <button onClick={() => {syncLatestData(); setPayStep('menu'); setPointModalOpen(true);}} className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border-2 border-[#fcd385] text-[#fcd385] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-sm sm:text-base font-black shadow-[0_0_10px_rgba(252,211,133,0.3)] hover:brightness-110 transition shrink-0">
+              <button onClick={async () => {
+                // 🌟 On-Demand Fetch: ခလုတ်နှိပ်မှသာ History ကို လှမ်းဆွဲမည် (Bandwidth ကာကွယ်ရန်) 🌟
+                if (currentUser?.role !== 'admin') {
+                   const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
+                   if (pSnap.exists() && pSnap.data().data) {
+                      setPointRequests(pSnap.data().data);
+                   }
+                }
+                syncLatestData(); 
+                setPayStep('menu'); 
+                setPointModalOpen(true);
+              }} className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border-2 border-[#fcd385] text-[#fcd385] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-sm sm:text-base font-black shadow-[0_0_10px_rgba(252,211,133,0.3)] hover:brightness-110 transition shrink-0">
                 <Coins className="w-5 h-5 sm:w-5 sm:h-5 text-yellow-400" /> <span>{currentUser.points} {t.pts}</span>
               </button>
               
