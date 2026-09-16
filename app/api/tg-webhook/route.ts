@@ -1,7 +1,8 @@
 export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+// 🌟 အဓိက ပြင်ဆင်ချက် - Edge ပေါ်တွင် အလုပ်လုပ်စေရန် firestore အစား firestore/lite ကို သုံးရပါမည်
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore/lite";
 
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
@@ -37,7 +38,6 @@ export async function POST(request: Request) {
              const [username, showId, epIndexStr] = decodedStr.split(':::');
              const epIndex = parseInt(epIndexStr, 10);
 
-             // ⚠️ ပြင်ဆင်ချက် (၁): စနစ်သစ်ဖြစ်သော 'Users' Collection တွင် Username ဖြင့် တိုက်ရိုက် သွားရှာမည်
              const userSnap = await getDoc(doc(db, "Users", username));
              
              if (userSnap.exists()) {
@@ -154,17 +154,13 @@ export async function POST(request: Request) {
         return show;
       });
 
-      // ပြင်ဆင်ပြီးသား Data ကို Database ထဲ Save ခြင်း (နှင့် အပေါ်ဆုံးသို့ ရွှေ့ခြင်း)
       if (isUpdated) {
         const updatedShowIndex = shows.findIndex((s: any) => s.id.toLowerCase() === movieId.toLowerCase());
         if (updatedShowIndex !== -1) {
           const updatedShow = shows.splice(updatedShowIndex, 1)[0];
-          shows.unshift(updatedShow); // ဇာတ်ကားကို အပေါ်ဆုံးသို့ ပို့လိုက်ပါပြီ
+          shows.unshift(updatedShow);
         }
         await setDoc(showsRef, { data: shows });
-
-        // ⚠️ ပြင်ဆင်ချက် (၂) : User အားလုံးဆီ အပိုင်းသစ် Noti ပို့ပြီး Database ထဲ သိမ်းသည့်စနစ်ကို အပြီးတိုင် ဖယ်ရှားလိုက်ပါပြီ။ (Write Limit မကုန်စေရန်) 
-        console.log(`Auto-linked ${movieId} Episode ${epNumber} and moved to top`);
       }
     }
 
