@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment } from "firebase/firestore";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
   Globe, Menu, Home, HelpCircle, Gift, Info, Send, Phone,
@@ -505,7 +505,6 @@ export default function SweetieWorldApp() {
             fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
             fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: "Jbsehunjae's World မှာ ကြိုဆိုပါတယ်!" }]),
             fetchDoc("faqs", setFaqs, [{ id: '1', title_en: 'How to buy points?', body_en: 'Transfer via KPay or WavePay. Then submit your Transaction ID.', title_mm: 'Point ဘယ်လိုဝယ်ရမလဲ?', body_mm: 'KPay, WavePay မှ ငွေလွှဲပါ။ ပြီးလျှင် Transaction ID အား ထည့်ပေးပါ။' }]),
-            fetchDoc("notifications", setNotifications, []),
             fetchMovieViews(),
             fetchPaymentProviders()
         ]);
@@ -516,7 +515,8 @@ export default function SweetieWorldApp() {
         if (currentUserData && currentUserData.role === 'admin') {
             await Promise.all([
                 fetchDoc("pointRequests", setPointRequests, []),
-                fetchDoc("adminLogs", setAdminLogs, [])
+                fetchDoc("adminLogs", setAdminLogs, []),
+                fetchDoc("notifications", setNotifications, []) // <--- ဒီမှာ ပြောင်းထည့်ပါ
             ]);
         }
         
@@ -554,7 +554,7 @@ export default function SweetieWorldApp() {
   const syncLatestData = async () => {
     isSyncing.current = true; // NEW: Auto-save များကို ခဏပိတ်ထားမည်
     try {
-      // --- ၁။ Admin သာလျှင် Admin Data များကို ဆွဲယူမည် (သာမန် User များအတွက် Read အလကားမတက်အောင် ကာကွယ်ခြင်း) ---
+      // --- ၁။ Admin သာလျှင် Admin Data များကို ဆွဲယူမည် ---
       if (currentUser?.role === 'admin') {
          const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
          if (pSnap.exists() && pSnap.data().data) {
@@ -563,6 +563,11 @@ export default function SweetieWorldApp() {
          const lSnap = await getDoc(doc(db, "SiteData", "adminLogs"));
          if (lSnap.exists() && lSnap.data().data) {
             setAdminLogs(prev => JSON.stringify(prev) !== JSON.stringify(lSnap.data().data) ? lSnap.data().data : prev);
+         }
+         // Noti ကိုလည်း Admin မှသာ ဆွဲတော့မည် 
+         const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
+         if (nSnap.exists() && nSnap.data().data) {
+            setNotifications(prev => JSON.stringify(prev) !== JSON.stringify(nSnap.data().data) ? nSnap.data().data : prev);
          }
       }
 
@@ -597,10 +602,7 @@ export default function SweetieWorldApp() {
         setCurrentUser(updatedUser);
      }
   }
-      const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
-      if (nSnap.exists() && nSnap.data().data) {
-         setNotifications(prev => JSON.stringify(prev) !== JSON.stringify(nSnap.data().data) ? nSnap.data().data : prev);
-      }
+      
       const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
       if (mvSnap.exists() && mvSnap.data().data) {
          setMovieViews(prev => JSON.stringify(prev) !== JSON.stringify(mvSnap.data().data) ? mvSnap.data().data : prev);
@@ -622,7 +624,15 @@ export default function SweetieWorldApp() {
     }
     
     // ၂။ User အားလုံးအတွက် (Website ကို ပြန်ဖွင့်တဲ့အချိန် / Tab ပြောင်းပြီး ပြန်ဝင်လာတဲ့အချိန်) မှသာ Data အသစ်လှမ်းဆွဲမည်
-    const handleFocus = () => { syncLatestData(); };
+    let lastFocusSync = 0;
+    const handleFocus = () => { 
+        const now = Date.now();
+        // ၆၀ စက္ကန့်အတွင်း ခဏခဏ Tab ဝင်ထွက်လုပ်ပါက Data ထပ်မဆွဲအောင် ကန့်သတ်ထားခြင်း
+        if (now - lastFocusSync > 60000) { 
+            syncLatestData(); 
+            lastFocusSync = now;
+        }
+    };
     window.addEventListener('focus', handleFocus);
 
     return () => {
@@ -657,25 +667,39 @@ export default function SweetieWorldApp() {
   // ==========================================
   // 4. ACTION HANDLERS
     const trackMovieView = (showId: string) => {
-  const d = new Date(); 
-  const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const localKey = `viewed_${showId}_${todayStr}`;
-  if (!localStorage.getItem(localKey)) {
-     localStorage.setItem(localKey, 'true');
-     setMovieViews(prev => {
-        const existing = prev[showId] || { total: 0, dates: {}, lastViewed: '' };
-        const newDates = { ...existing.dates };
-        newDates[todayStr] = (newDates[todayStr] || 0) + 1;
-        const updatedViews = {
-           ...prev,
-           [showId]: { total: existing.total + 1, dates: newDates, lastViewed: new Date().toISOString() }
-        };
-        // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
-        setDoc(doc(db, "SiteData", "movieViews"), { data: updatedViews });
-        return updatedViews;
-     });
-  }
-};
+    const d = new Date(); 
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const localKey = `viewed_${showId}_${todayStr}`;
+    
+    if (!localStorage.getItem(localKey)) {
+       localStorage.setItem(localKey, 'true');
+       
+       // ၁။ Local UI အတွက် State ကို အရင်တိုးပေးမည် (Website ပေါ်မှာ ချက်ချင်း View တက်သွားရန်)
+       setMovieViews(prev => {
+          const existing = prev[showId] || { total: 0, dates: {}, lastViewed: '' };
+          const newDates = { ...existing.dates };
+          newDates[todayStr] = (newDates[todayStr] || 0) + 1;
+          return {
+             ...prev,
+             [showId]: { total: existing.total + 1, dates: newDates, lastViewed: new Date().toISOString() }
+          };
+       });
+
+       // ၂။ Database ဆီသို့ increment(1) ဖြင့် ပို့မည် (Data အထုပ်ကြီး မပါတော့ပါ)
+       // merge: true သုံးထားသဖြင့် အခြား User များ၏ နှိပ်ထားမှုများကို ဖုံးအုပ်သွားခြင်း မရှိတော့ပါ။
+       setDoc(doc(db, "SiteData", "movieViews"), { 
+          data: {
+             [showId]: {
+                total: increment(1),
+                dates: {
+                   [todayStr]: increment(1)
+                },
+                lastViewed: new Date().toISOString()
+             }
+          }
+       }, { merge: true }).catch(err => console.error("View Update Error:", err));
+    }
+  };
   // ==========================================
   const handleGetTelegramLink = async (channelId: string) => {
     if (!channelId) return showToast("Channel ID မရှိပါ။ Admin သို့ဆက်သွယ်ပါ။");
@@ -1483,47 +1507,51 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                 </button>
               )}
               
-              {/* NOTIFICATION BELL */}
-              <div className="relative shrink-0" ref={notiRef}>
-                 <button onClick={() => {setNotiDropdownOpen(!notiDropdownOpen);}} className="p-2 bg-[#1f1f1f] rounded-full border border-zinc-700 hover:border-[#fcd385]/50 transition relative flex items-center justify-center">
-                    <Bell className={`w-5 h-5 ${unreadNotiCount > 0 ? 'text-[#fcd385]' : 'text-zinc-400'}`} />
-                    {unreadNotiCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-[#161616] animate-pulse">{unreadNotiCount}</span>}
-                 </button>
-                 
-                 {/* NOTIFICATION DROPDOWN */}
-                 {notiDropdownOpen && (
-                   <div className="fixed sm:absolute left-4 right-4 sm:left-auto sm:right-0 top-16 sm:top-12 sm:mt-1 w-auto sm:w-[320px] max-h-[70vh] sm:max-h-[80vh] bg-[#1a1a1a] border border-[#fcd385]/30 shadow-2xl rounded-2xl z-[200] flex flex-col overflow-hidden animate-fade-in mx-auto">
-                      <div className="p-4 border-b border-zinc-800 bg-[#161616] flex justify-between items-center">
-                        <h4 className="font-bold text-[#fcd385] flex items-center gap-2"><Bell className="w-4 h-4"/> {t.notifications}</h4>
-                        {myNotis.length > 0 && <button onClick={() => setNotifications(notifications.map(n => {
-  const isMine = n.targetUser === 'all' || n.targetUser === currentUser?.username || (currentUser?.role === 'admin' && n.targetUser === 'admin');
-  if (!isMine) return n;
-  if (n.targetUser === 'all' && currentUser) {
-    const currentReadBy = n.readBy || [];
-    return currentReadBy.includes(currentUser.username) ? n : { ...n, readBy: [...currentReadBy, currentUser.username] };
-  }
-  return { ...n, isRead: true };
-}))} className="text-[10px] text-zinc-400 hover:text-white transition">{t.markAllRead}</button>}
-                      </div>
-                      <div className="flex-1 overflow-y-auto max-h-[300px] custom-scrollbar">
-                         {myNotis.length === 0 ? <p className="text-xs text-zinc-500 text-center py-6">{t.noNoti}</p> : myNotis.map(n => {
-                           const isActuallyRead = n.targetUser === 'all' ? (n.readBy && currentUser && n.readBy.includes(currentUser.username)) : n.isRead;
-                           return (
-                           <div key={n.id} onClick={() => handleNotiClick(n)} className={`p-4 border-b border-zinc-800/50 cursor-pointer hover:bg-black/40 transition flex gap-3 ${isActuallyRead ? 'opacity-60' : 'bg-[#2b0303]/30 border-l-2 border-l-[#fcd385]'}`}>
-                              <div className="shrink-0 mt-1">
-                                {n.actionType === 'point_request' ? <AlertCircle className="w-5 h-5 text-yellow-400"/> : n.actionType === 'point_approve' ? <CheckCircle className="w-5 h-5 text-emerald-400"/> : n.actionType === 'point_reject' ? <XCircle className="w-5 h-5 text-red-500"/> : <Mail className="w-5 h-5 text-blue-400"/>}
-                              </div>
-                              <div>
-                                <p className={`text-xs ${isActuallyRead ? 'text-zinc-300' : 'text-white font-bold'} mb-1`}>{n.message}</p>
-                                <span className="text-[9px] text-zinc-500">{formatDateTime(n.date)}</span>
-                              </div>
-                           </div>
-                           );
-                         })}
-                      </div>
-                   </div>
-                 )}
-              </div>
+              {/* NOTIFICATION BELL (Admin Only) */}
+              {currentUser.role === 'admin' && (
+                <div className="relative shrink-0" ref={notiRef}>
+                   <button onClick={() => {setNotiDropdownOpen(!notiDropdownOpen);}} className="p-2 bg-[#1f1f1f] rounded-full border border-zinc-700 hover:border-[#fcd385]/50 transition relative flex items-center justify-center">
+                      <Bell className={`w-5 h-5 ${unreadNotiCount > 0 ? 'text-[#fcd385]' : 'text-zinc-400'}`} />
+                      {unreadNotiCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-[#161616] animate-pulse">{unreadNotiCount}</span>}
+                   </button>
+                   
+                   {/* NOTIFICATION DROPDOWN */}
+                   {notiDropdownOpen && (
+                     <div className="fixed sm:absolute left-4 right-4 sm:left-auto sm:right-0 top-16 sm:top-12 sm:mt-1 w-auto sm:w-[320px] max-h-[70vh] sm:max-h-[80vh] bg-[#1a1a1a] border border-[#fcd385]/30 shadow-2xl rounded-2xl z-[200] flex flex-col overflow-hidden animate-fade-in mx-auto">
+                        <div className="p-4 border-b border-zinc-800 bg-[#161616] flex justify-between items-center">
+                          <h4 className="font-bold text-[#fcd385] flex items-center gap-2"><Bell className="w-4 h-4"/> {t.notifications}</h4>
+                          {myNotis.length > 0 && <button onClick={() => setNotifications(notifications.map(n => {
+                            const isMine = n.targetUser === 'all' || n.targetUser === currentUser?.username || (currentUser?.role === 'admin' && n.targetUser === 'admin');
+                            if (!isMine) return n;
+                            if (n.targetUser === 'all' && currentUser) {
+                              const currentReadBy = n.readBy || [];
+                              return currentReadBy.includes(currentUser.username) ? n : { ...n, readBy: [...currentReadBy, currentUser.username] };
+                            }
+                            return { ...n, isRead: true };
+                          }))} className="text-[10px] text-zinc-400 hover:text-white transition">{t.markAllRead}</button>}
+                        </div>
+                        <div className="flex-1 overflow-y-auto max-h-[300px] custom-scrollbar">
+                           {myNotis.length === 0 ? <p className="text-xs text-zinc-500 text-center py-6">{t.noNoti}</p> : myNotis.map(n => {
+                             const isActuallyRead = n.targetUser === 'all' ? (n.readBy && currentUser && n.readBy.includes(currentUser.username)) : n.isRead;
+                             return (
+                             <div key={n.id} onClick={() => handleNotiClick(n)} className={`p-4 border-b border-zinc-800/50 cursor-pointer hover:bg-black/40 transition flex gap-3 ${isActuallyRead ? 'opacity-60' : 'bg-[#2b0303]/30 border-l-2 border-l-[#fcd385]'}`}>
+                                <div className="shrink-0 mt-1">
+                                  {n.actionType === 'point_request' ? <AlertCircle className="w-5 h-5 text-yellow-400"/> : n.actionType === 'point_approve' ? <CheckCircle className="w-5 h-5 text-emerald-400"/> : n.actionType === 'point_reject' ? <XCircle className="w-5 h-5 text-red-500"/> : <Mail className="w-5 h-5 text-blue-400"/>}
+                                </div>
+                                <div>
+                                  <p className={`text-xs ${isActuallyRead ? 'text-zinc-300' : 'text-white font-bold'} mb-1`}>{n.message}</p>
+                                  <span className="text-[9px] text-zinc-500">{formatDateTime(n.date)}</span>
+                                </div>
+                             </div>
+                             );
+                           })}
+                        </div>
+                     </div>
+                   )}
+                </div>
+              )}
+
+        
 
               {/* BIGGER POINTS BUTTON */}
               <button onClick={async () => {
@@ -1586,10 +1614,15 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                     <p className="text-2xl font-black text-[#fcd385]">Ks. {currentUser.points}</p>
                  </div>
                  <div className="flex-1 overflow-y-auto p-4 space-y-2 flex flex-col">
-                    <button onClick={() => setUserMenuTab('messages')} className="w-full flex items-center justify-between p-3 bg-black/20 hover:bg-black/40 rounded-xl transition text-white font-bold text-sm">
-                      <div className="flex items-center gap-3 relative"><MessageSquareIcon unreadCount={unreadNotiCount}/> {t.inbox}</div>
-                      <ChevronRight className="w-4 h-4 text-white/50"/>
-                    </button>
+
+		 {/* INBOX MENU (Admin Only) */}
+                    {currentUser.role === 'admin' && (
+                      <button onClick={() => setUserMenuTab('messages')} className="w-full flex items-center justify-between p-3 bg-black/20 hover:bg-black/40 rounded-xl transition text-white font-bold text-sm">
+                        <div className="flex items-center gap-3 relative"><MessageSquareIcon unreadCount={unreadNotiCount}/> {t.inbox}</div>
+                        <ChevronRight className="w-4 h-4 text-white/50"/>
+                      </button>
+                    )}
+
                     <button onClick={() => {setChangePwdModalOpen(true); setUserMenuOpen(false);}} className="w-full flex items-center justify-between p-3 bg-black/20 hover:bg-black/40 rounded-xl transition text-white font-bold text-sm">
                       <div className="flex items-center gap-3"><Key className="w-4 h-4"/> {t.changePwd}</div>
                       <ChevronRight className="w-4 h-4 text-white/50"/>
