@@ -637,7 +637,7 @@ export default function SweetieWorldApp() {
     let interval: any;
     // ၁။ Admin ဖြစ်မှသာ စက္ကန့် ၃၀ တစ်ခါ အလိုလို Sync လုပ်မည် (Read မတက်အောင် ကာကွယ်ထားခြင်း)
     if (currentUser?.role === 'admin') {
-       interval = setInterval(() => { syncLatestData(); }, 30000); 
+       interval = setInterval(() => { syncLatestData(); }, 2000000); 
     }
     
     // ၂။ User အားလုံးအတွက် (Website ကို ပြန်ဖွင့်တဲ့အချိန် / Tab ပြောင်းပြီး ပြန်ဝင်လာတဲ့အချိန်) မှသာ Data အသစ်လှမ်းဆွဲမည်
