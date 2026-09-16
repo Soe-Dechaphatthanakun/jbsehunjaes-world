@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment, startAfter } from "firebase/firestore";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
   Globe, Menu, Home, HelpCircle, Gift, Info, Send, Phone,
@@ -33,7 +33,7 @@ const db = getFirestore(app);
 // ------------------------------------------------------------------
 interface EpLink { platform: string; url: string; }
 interface EpisodeData { epLabel: string; links: EpLink[]; releaseDateRaw?: string; releaseDate: string; isVipOnly?: boolean; }
-interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; seriesType?: 'long' | 'mini'; }
+interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; seriesType?: 'long' | 'mini'; updatedAt?: string; }
 
 // History tracking for usage and admin bonuses
 interface UserHistoryLog { id: string; type: 'usage' | 'admin_bonus' | 'buy_vip' | 'buy_ep'; title: string; amount: number; date: string; }
@@ -236,6 +236,11 @@ export default function SweetieWorldApp() {
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(DEFAULT_CONFIG);
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [adminLogs, setAdminLogs] = useState<AdminLogData[]>([]);
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [uiPage, setUiPage] = useState(1);
+  const itemsPerPage = 30;
 
   // NEW: Movie Views States
   const [movieViews, setMovieViews] = useState<Record<string, MovieViewData>>({});
@@ -438,9 +443,6 @@ export default function SweetieWorldApp() {
     setIsClient(true);
     const loadData = async () => {
       try {
-        
-
-        // Data ဆွဲယူမည့် Function များကို သီးသန့်ခွဲထုတ်ခြင်း
         const fetchConfig = async () => {
             const snapConfig = await getDoc(doc(db, "SiteData", "siteConfig"));
             if (snapConfig.exists() && snapConfig.data().data) {
@@ -460,24 +462,32 @@ export default function SweetieWorldApp() {
 
         const fetchShows = async () => {
             const showsCol = collection(db, "Shows");
-            const showsSnap = await getDocs(showsCol);
+            const q = query(showsCol, orderBy("id", "desc"), limit(30));
+            const showsSnap = await getDocs(q);
 
             if (!showsSnap.empty) {
                const loadedShows = showsSnap.docs.map(d => d.data() as VideoCardData);
-               loadedShows.sort((a, b) => b.id.localeCompare(a.id));
+               loadedShows.sort((a, b) => {
+                  const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
+                  const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
+                  return timeB - timeA;
+               });
                setShows(loadedShows);
+               setLastVisible(showsSnap.docs[showsSnap.docs.length - 1]);
+               setHasMore(showsSnap.docs.length === 30);
             } else {
-               // ၂။ Shows Collection အသစ်တွင် Data မရှိသေးပါက အဟောင်း (SiteData/shows) မှ ဆွဲပြီး Auto-Migrate ပြုလုပ်မည်
                const oldSnap = await getDoc(doc(db, "SiteData", "shows"));
                if (oldSnap.exists() && oldSnap.data().data && oldSnap.data().data.length > 0) {
                   const oldShows = oldSnap.data().data;
-                  setShows(oldShows);
-
-                  // Data မပျောက်စေရန် အဟောင်းထဲမှ ဇာတ်ကားများကို Shows Collection အသစ်ထဲသို့ တစ်ခါတည်း တိုက်ရိုက် ကူးထည့်ပေးခြင်း
+                  oldShows.sort((a: any, b: any) => {
+                     const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
+                     const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
+                     return timeB - timeA;
+                  });
+                  setShows(oldShows.slice(0, 30));
                   oldShows.forEach(async (showItem: VideoCardData) => {
                      await setDoc(doc(db, "Shows", showItem.id), showItem);
                   });
-                  console.log("Auto-migrated shows to new 'Shows' collection successfully!");
                } else {
                   setShows(INITIAL_SHOWS);
                }
@@ -504,16 +514,15 @@ export default function SweetieWorldApp() {
            return null;
         };
 
-        // 🌟 Bandwidth Optimization (1): API Request များကို ခွဲခြား၍ ဆွဲယူခြင်း
         const [ loadedUsers ] = await Promise.all([
-    (async () => { 
-       const savedUser = localStorage.getItem('jbsehunjaes_auth');
-       if(savedUser) {
-          const uSnap = await getDoc(doc(db, "Users", savedUser));
-          if(uSnap.exists()) { const d = [uSnap.data() as UserData]; setUsers(d); return d; }
-       }
-       setUsers([]); return []; 
-    })(),
+            (async () => { 
+               const savedUser = localStorage.getItem('jbsehunjaes_auth');
+               if(savedUser) {
+                  const uSnap = await getDoc(doc(db, "Users", savedUser));
+                  if(uSnap.exists()) { const d = [uSnap.data() as UserData]; setUsers(d); return d; }
+               }
+               setUsers([]); return []; 
+            })(),
             fetchConfig(),
             fetchShows(),
             fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
@@ -524,14 +533,13 @@ export default function SweetieWorldApp() {
             fetchPaymentProviders()
         ]);
 
-        // 🌟 Bandwidth Optimization (2): သာမန် User များအတွက် မလိုအပ်သော Data အထုပ်ကြီးများ (Logs, Requests) ကို မဆွဲတော့ဘဲ Admin ဖြစ်မှသာ ဆွဲမည်
         const savedUser = localStorage.getItem('jbsehunjaes_auth');
         const currentUserData = loadedUsers ? loadedUsers.find((u: any) => u.username === savedUser) : null;
         if (currentUserData && currentUserData.role === 'admin') {
             await Promise.all([
                 fetchDoc("pointRequests", setPointRequests, []),
                 fetchDoc("adminLogs", setAdminLogs, []),
-                fetchDoc("notifications", setNotifications, []) // <--- ဒီမှာ ပြောင်းထည့်ပါ
+                fetchDoc("notifications", setNotifications, [])
             ]);
         }
         
@@ -563,13 +571,11 @@ export default function SweetieWorldApp() {
         localStorage.removeItem('jbsehunjaes_auth');
       }
     } 
-    // Login Box ကို အလိုအလျောက် ပေါ်မလာစေရန် ဖြုတ်ထားပါသည်
-  }, [isInitialLoad]); // users ကို dependency ကနေ ဖြုတ်ထားပါတယ် (ခဏခဏ Box မပေါ်စေဖို့ပါ)
+  }, [isInitialLoad]); 
 
   const syncLatestData = async () => {
-    isSyncing.current = true; // NEW: Auto-save များကို ခဏပိတ်ထားမည်
+    isSyncing.current = true; 
     try {
-      // --- ၁။ Admin သာလျှင် Admin Data များကို ဆွဲယူမည် ---
       if (currentUser?.role === 'admin') {
          const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
          if (pSnap.exists() && pSnap.data().data) {
@@ -579,46 +585,50 @@ export default function SweetieWorldApp() {
          if (lSnap.exists() && lSnap.data().data) {
             setAdminLogs(prev => JSON.stringify(prev) !== JSON.stringify(lSnap.data().data) ? lSnap.data().data : prev);
          }
-         // Noti ကိုလည်း Admin မှသာ ဆွဲတော့မည် 
          const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
          if (nSnap.exists() && nSnap.data().data) {
             setNotifications(prev => JSON.stringify(prev) !== JSON.stringify(nSnap.data().data) ? nSnap.data().data : prev);
          }
       }
 
-      // --- ၂။ User အားလုံးအတွက် မရှိမဖြစ် လိုအပ်သော Data များ ---
-      // NEW: ဇာတ်ကား Link အသစ်များကို Shows Collection အသစ်မှ လှမ်းဆွဲမည်
-      const sSnap = await getDocs(collection(db, "Shows"));
+      const qShows = query(collection(db, "Shows"), orderBy("id", "desc"), limit(30));
+      const sSnap = await getDocs(qShows);
       if (!sSnap.empty) {
          const latestShows = sSnap.docs.map(d => d.data() as VideoCardData);
-	 latestShows.sort((a, b) => b.id.localeCompare(a.id));
-         setShows(prev => JSON.stringify(prev) !== JSON.stringify(latestShows) ? latestShows : prev);
+         setShows(prev => {
+            const prevMap = new Map(prev.map(s => [s.id, s]));
+            latestShows.forEach(s => prevMap.set(s.id, s));
+            const combined = Array.from(prevMap.values());
+            combined.sort((a, b) => {
+               const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
+               const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
+               return timeB - timeA;
+            });
+            return combined;
+         });
       }
-      // Admin ဆိုရင် User အားလုံးကို မဆွဲတော့ဘဲ Active ဖြစ်သော User (၅၀) ကိုသာ ဆွဲမည် (Read Limit ကာကွယ်ရန်)
-  if (currentUser?.role === 'admin') {
-     const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(50));
-     const uSnap = await getDocs(uQuery);
-     
-     // 🌟 Dashboard အတွက် Total Users ကို Data မဆွဲဘဲ Count သီးသန့် ရေတွက်မည် 🌟
-     try {
-         const countSnap = await getCountFromServer(collection(db, "Users"));
-         setTotalUsersCount(countSnap.data().count);
-     } catch (e) { console.error("Count Error", e); }
 
-     if (!uSnap.empty) {
-        const fetchedUsers = uSnap.docs.map(d => d.data() as UserData);
-        setUsers(fetchedUsers);
-        const updated = fetchedUsers.find(u => u.username === currentUser.username);
-        if (updated) setCurrentUser(updated);
-     }
-  } else if (currentUser) {
-     const uSnap = await getDoc(doc(db, "Users", currentUser.username));
-     if (uSnap.exists()) {
-        const updatedUser = uSnap.data() as UserData;
-        setUsers([updatedUser]);
-        setCurrentUser(updatedUser);
-     }
-  }
+      if (currentUser?.role === 'admin') {
+         const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(50));
+         const uSnap = await getDocs(uQuery);
+         try {
+             const countSnap = await getCountFromServer(collection(db, "Users"));
+             setTotalUsersCount(countSnap.data().count);
+         } catch (e) { console.error("Count Error", e); }
+         if (!uSnap.empty) {
+            const fetchedUsers = uSnap.docs.map(d => d.data() as UserData);
+            setUsers(fetchedUsers);
+            const updated = fetchedUsers.find(u => u.username === currentUser.username);
+            if (updated) setCurrentUser(updated);
+         }
+      } else if (currentUser) {
+         const uSnap = await getDoc(doc(db, "Users", currentUser.username));
+         if (uSnap.exists()) {
+            const updatedUser = uSnap.data() as UserData;
+            setUsers([updatedUser]);
+            setCurrentUser(updatedUser);
+         }
+      }
       
       const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
       if (mvSnap.exists() && mvSnap.data().data) {
@@ -627,47 +637,103 @@ export default function SweetieWorldApp() {
     } catch(e) {
       console.error("Sync error:", e);
     } finally {
-      setTimeout(() => { isSyncing.current = false; }, 1000); // NEW: စက္ကန့်ဝက်အကြာမှ Auto-save ပြန်ဖွင့်မည်
+      setTimeout(() => { isSyncing.current = false; }, 1000); 
     }
   };
 
+  // NEW: Category အလိုက် ၃၀ ပုဒ်စီ ဆွဲမည့် Function (1, 2, 3 Next Page အတွက်ပါ ပါဝင်သည်)
+  const fetchMovies = async (isLoadMore = false, cat = activeCategory) => {
+    if (isLoadMore && (!lastVisible || !hasMore)) return;
+    setLoadingMore(true);
+    try {
+        let baseQuery;
+        if (cat === 'All' || cat === 'Latest Releases') {
+            baseQuery = query(collection(db, "Shows"), orderBy("id", "desc"));
+        } else {
+            baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("id", "desc"));
+        }
+
+        const finalQuery = isLoadMore 
+            ? query(baseQuery, startAfter(lastVisible), limit(30))
+            : query(baseQuery, limit(30));
+
+        const showsSnap = await getDocs(finalQuery);
+
+        if (!showsSnap.empty) {
+            const newShows = showsSnap.docs.map(d => d.data() as VideoCardData);
+            if (isLoadMore) {
+                setShows(prev => {
+                    const prevMap = new Map(prev.map(s => [s.id, s]));
+                    newShows.forEach(s => prevMap.set(s.id, s));
+                    const combined = Array.from(prevMap.values());
+                    combined.sort((a, b) => {
+                        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
+                        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
+                        return timeB - timeA;
+                    });
+                    return combined;
+                });
+            } else {
+                // Category အသစ်ရွေးရင် အဟောင်းတွေဖျက်ပြီး သက်ဆိုင်ရာကား အသစ် ၃၀ ပဲပြမည်
+                newShows.sort((a, b) => {
+                    const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
+                    const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
+                    return timeB - timeA;
+                });
+                setShows(newShows); 
+            }
+            setLastVisible(showsSnap.docs[showsSnap.docs.length - 1]);
+            setHasMore(showsSnap.docs.length === 30);
+        } else {
+            if (!isLoadMore) setShows([]);
+            setHasMore(false);
+        }
+    } catch (error: any) {
+        console.error("Fetch error:", error);
+        // Category ဖြင့်ရှာရန် Firebase Index လိုအပ်ပါက အလိုအလျောက် သတိပေးမည်
+        if (error.message && error.message.includes("requires an index")) {
+            showToast("Category ခွဲရန် Firebase Index လိုအပ်နေပါသည်။ Developer Console တွင် Error လင့်ခ်ကိုနှိပ်ပါ။");
+        }
+    } finally {
+        setLoadingMore(false);
+    }
+  };
+
+  // Category Tab ပြောင်းတိုင်း Page 1 မှ ပြန်စပြီး Data ၃၀ အသစ်ပြန်ဆွဲရန်
+  useEffect(() => {
+     if (isInitialLoad) return;
+     setUiPage(1);
+     fetchMovies(false, activeCategory);
+  }, [activeCategory]);
+
   useEffect(() => {
     if (isInitialLoad) return;
-
     let interval: any;
-    // ၁။ Admin ဖြစ်မှသာ စက္ကန့် ၃၀ တစ်ခါ အလိုလို Sync လုပ်မည် (Read မတက်အောင် ကာကွယ်ထားခြင်း)
     if (currentUser?.role === 'admin') {
        interval = setInterval(() => { syncLatestData(); }, 2000000); 
     }
-    
-    // ၂။ User အားလုံးအတွက် (Website ကို ပြန်ဖွင့်တဲ့အချိန် / Tab ပြောင်းပြီး ပြန်ဝင်လာတဲ့အချိန်) မှသာ Data အသစ်လှမ်းဆွဲမည်
     let lastFocusSync = 0;
     const handleFocus = () => { 
         const now = Date.now();
-        // ၆၀ စက္ကန့်အတွင်း ခဏခဏ Tab ဝင်ထွက်လုပ်ပါက Data ထပ်မဆွဲအောင် ကန့်သတ်ထားခြင်း
         if (now - lastFocusSync > 60000) { 
             syncLatestData(); 
             lastFocusSync = now;
         }
     };
     window.addEventListener('focus', handleFocus);
-
     return () => {
        if (interval) clearInterval(interval);
        window.removeEventListener('focus', handleFocus);
     };
   }, [isInitialLoad, currentUser?.role]);
 
-  // 🌟 Admin သာလျှင် Auto-save အလုပ်လုပ်စေရန်နှင့် Write လေလွင့်မှုမှ ကာကွယ်ရန် (2 Seconds Delay ထည့်သွင်းထားသည်)
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "categories"), { data: categories }), 2000); return () => clearTimeout(t); } }, [categories, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "platforms"), { data: platforms }), 2000); return () => clearTimeout(t); } }, [platforms, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "promotions"), { data: promotions }), 2000); return () => clearTimeout(t); } }, [promotions, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "faqs"), { data: faqs }), 2000); return () => clearTimeout(t); } }, [faqs, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }), 2000); return () => clearTimeout(t); } }, [paymentProviders, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }), 2000); return () => clearTimeout(t); } }, [siteConfig, currentUser?.role]);
- 
 
-  // NEW: Direct Link ဖြင့် ဝင်လာပါက ဇာတ်ကားကို အလိုလို ဖွင့်ပေးမည်
   useEffect(() => {
     if (shows.length > 0) {
       const urlParams = new URLSearchParams(window.location.search);
@@ -3100,7 +3166,9 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     image: newVideo.image || 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=700',
     category: newVideo.category || categories[0], description: newVideo.description || '',
     totalEpisodes: newVideo.totalEpisodes ?? 0, episodes: newVideo.episodes || [],
-    vipTelegramLink: newVideo.vipTelegramLink || '', seriesType: newVideo.seriesType || 'long', pointsPerEp: newVideo.pointsPerEp ?? 20
+    vipTelegramLink: newVideo.vipTelegramLink || '', seriesType: newVideo.seriesType || 'long', pointsPerEp: newVideo.pointsPerEp ?? 20,
+    // 👇 ဒီစာကြောင်းလေးကို အသစ်ပေါင်းထည့်ပေးပါ
+    updatedAt: new Date().toISOString() 
   };
 
   isSyncing.current = true; 
@@ -3236,16 +3304,16 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 <div className="w-full px-4 mt-6 font-sans">
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2">
               
-              {/* All ခလုတ် (Category လိုက် အတန်းခွဲပြရန်) */}
-              <button onClick={() => setActiveCategory('All')}
+              {/* All ခလုတ် */}
+              <button onClick={() => { setActiveCategory('All'); setUiPage(1); }}
                 className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition border ${
                   activeCategory === 'All' ? 'bg-[#3e1717] text-[#fcd385] border-[#fcd385]' : 'bg-[#1f1f1f] text-zinc-400 border-zinc-800 hover:text-white'
                 }`}>
                 {lang === 'en' ? 'All' : 'အားလုံး'}
               </button>
 
-              {/* Latest Releases ခလုတ် (Grid ဖြင့် အကုန်ရောပြရန်) */}
-              <button onClick={() => setActiveCategory('Latest Releases')}
+              {/* Latest Releases ခလုတ် */}
+              <button onClick={() => { setActiveCategory('Latest Releases'); setUiPage(1); }}
                 className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition border ${
                   activeCategory === 'Latest Releases' ? 'bg-[#3e1717] text-[#fcd385] border-[#fcd385]' : 'bg-[#1f1f1f] text-zinc-400 border-zinc-800 hover:text-white'
                 }`}>
@@ -3254,7 +3322,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 
               {/* ကျန်တဲ့ Category အခြားခလုတ်များ */}
               {categories.filter(c => c !== 'All').map((cat) => (
-                <button key={cat} onClick={() => setActiveCategory(cat)}
+                <button key={cat} onClick={() => { setActiveCategory(cat); setUiPage(1); }}
                   className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition border ${
                     activeCategory === cat ? 'bg-[#3e1717] text-[#fcd385] border-[#fcd385]' : 'bg-[#1f1f1f] text-zinc-400 border-zinc-800 hover:text-white'
                   }`}>
@@ -3266,58 +3334,75 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
           </div>
 
 		<main className="w-full px-4 mt-6 pb-12 font-sans">
-            {activeCategory === 'All' && !searchQuery ? (
-              <div className="space-y-8">
-                {categories.filter(c => c !== 'All').map(cat => {
-                  const catShows = shows.filter(s => s.category === cat);
-                  if (catShows.length === 0) return null;
-                  return (
-                    <div key={cat} className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2 cursor-pointer hover:text-[#fcd385] transition" onClick={() => setActiveCategory(cat)}>
-                          Top {cat} <ChevronRight className="w-5 h-5 text-[#fcd385]" />
-                        </h2>
+            {/* Movies Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-5">
+              {(() => {
+                // UI Page အတွက် ၃၀ ပုဒ်စီ ဖြတ်ထုတ်ခြင်း
+                const paginatedGridShows = filteredShows.slice((uiPage - 1) * itemsPerPage, uiPage * itemsPerPage);
+                
+                if (paginatedGridShows.length === 0) {
+                  return <div className="col-span-full py-16 text-center text-zinc-500 text-sm font-bold bg-[#1a1a1a] rounded-xl border border-zinc-800">No shows found in this category.</div>;
+                }
+
+                return paginatedGridShows.map(item => (
+                  <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 hover:shadow-[0_0_15px_rgba(252,211,133,0.15)] transition-all flex flex-col shadow-lg">
+                    <div className="aspect-[3/4] sm:aspect-[16/9] lg:aspect-[4/5] relative overflow-hidden bg-black">
+                      <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"></div>
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-12 h-12 rounded-full bg-[#fcd385]/90 flex items-center justify-center shadow-[0_0_20px_rgba(252,211,133,0.5)] scale-90 group-hover:scale-100 transition-transform"><Play className="w-5 h-5 text-[#3e1717] ml-1" /></div>
                       </div>
-                      <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-                        {catShows.map(item => (
-                          <div key={item.id} onClick={() => setSelectedShow(item)} className="w-[240px] sm:w-[280px] flex-none bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 transition flex flex-col shadow-lg">
-                            <div className="aspect-[16/9] relative overflow-hidden bg-black">
-                              <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-105 transition" />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
-                                <div className="w-10 h-10 rounded-full bg-[#fcd385]/90 flex items-center justify-center shadow-xl"><Play className="w-4 h-4 text-[#3e1717] ml-0.5" /></div>
-                              </div>
-                              <div className="absolute top-2 left-2 bg-[#2b0303] border border-[#fcd385]/50 text-[#fcd385] text-[10px] font-bold px-2 py-0.5 rounded shadow">{item.totalEpisodes} EP</div>
-                            </div>
-                            <div className="p-3 flex-1 flex flex-col justify-between">
-                              <h3 className="text-sm font-bold text-white truncate">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
-                              <p className="text-[11px] text-zinc-400 mt-1">{item.category}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-6">
-                {filteredShows.length > 0 ? filteredShows.map(item => (
-                  <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 transition flex flex-col shadow-lg">
-                    <div className="aspect-[16/9] relative overflow-hidden bg-black">
-                      <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-105 transition" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
-                        <div className="w-12 h-12 rounded-full bg-[#fcd385]/90 flex items-center justify-center shadow-xl"><Play className="w-5 h-5 text-[#3e1717] ml-1" /></div>
-                      </div>
-                      <div className="absolute top-2 left-2 bg-[#2b0303] border border-[#fcd385]/50 text-[#fcd385] text-[10px] font-bold px-2 py-0.5 rounded shadow">{item.totalEpisodes} EP</div>
+                      <div className="absolute top-2 left-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border border-[#fcd385]/30 text-[#fcd385] text-[10px] sm:text-xs font-black px-2 py-0.5 rounded shadow">{item.totalEpisodes} EP</div>
                     </div>
                     <div className="p-3 flex-1 flex flex-col justify-between">
-                      <h3 className="text-sm font-bold text-white truncate">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
-                      <p className="text-[11px] text-zinc-400 mt-1">{item.category}</p>
+                      <h3 className="text-sm font-bold text-white line-clamp-1">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
+                      <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">{item.category}</p>
                     </div>
                   </div>
-                )) : (
-                  <div className="col-span-full py-10 text-center text-zinc-500 text-sm">No shows found.</div>
-                )}
+                ));
+              })()}
+            </div>
+
+            {/* Numbered Pagination Buttons (1, 2, 3, Next) */}
+            {!searchQuery && (
+              <div className="flex flex-wrap justify-center items-center gap-2 mt-12 font-bold text-xs sm:text-sm">
+                
+                <button 
+                  onClick={() => setUiPage(prev => Math.max(1, prev - 1))}
+                  disabled={uiPage === 1}
+                  className="px-3 py-2 sm:px-4 bg-black text-zinc-400 border border-zinc-800 rounded-lg hover:text-white hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                >
+                  {lang === 'en' ? 'Previous' : 'ယခင်'}
+                </button>
+
+                {/* Local Loaded Pages List */}
+                {Array.from({ length: Math.ceil(filteredShows.length / itemsPerPage) }, (_, i) => i + 1).map(num => (
+                  <button 
+                    key={num} 
+                    onClick={() => setUiPage(num)}
+                    className={`min-w-[32px] h-8 sm:min-w-[40px] sm:h-10 flex items-center justify-center rounded-lg transition border ${uiPage === num ? 'bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] border-[#fcd385] shadow-[0_0_10px_rgba(252,211,133,0.4)]' : 'bg-black text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-500'}`}
+                  >
+                    {num}
+                  </button>
+                ))}
+
+                {/* Load More Trigger disguised as Next */}
+                <button 
+                  onClick={async () => {
+                     const totalPages = Math.ceil(filteredShows.length / itemsPerPage);
+                     if (uiPage < totalPages) {
+                         setUiPage(uiPage + 1); // Go to next local page
+                     } else if (hasMore) {
+                         await fetchMovies(true, activeCategory); // Fetch exactly 30 more from DB
+                         setUiPage(uiPage + 1); // Automatically move to newly fetched page
+                     }
+                  }}
+                  disabled={loadingMore || (uiPage === Math.ceil(filteredShows.length / itemsPerPage) && !hasMore)}
+                  className="px-3 py-2 sm:px-4 bg-[#1f1f1f] text-[#fcd385] border border-[#fcd385]/30 rounded-lg hover:bg-[#2b0303] hover:border-[#fcd385] disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center gap-1"
+                >
+                  {loadingMore ? <RefreshCw className="w-4 h-4 animate-spin text-[#fcd385]" /> : (lang === 'en' ? 'Next page' : 'နောက်သို့')}
+                </button>
+
               </div>
             )}
           </main>

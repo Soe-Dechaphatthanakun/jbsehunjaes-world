@@ -137,6 +137,7 @@ export async function POST(request: Request) {
         const alreadyExists = ep.links.some((l: any) => l.url === tgLink);
         if (!alreadyExists) {
           ep.links.push({ platform: 'Telegram', url: tgLink });
+          show.updatedAt = new Date().toISOString();
           await setDoc(showRef, show);
           console.log(`Auto-linked ${movieId} Episode ${epNumber} successfully`);
         }
