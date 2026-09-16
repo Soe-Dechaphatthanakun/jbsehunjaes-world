@@ -3374,10 +3374,10 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                         </button>
                       </div>
                       
-                      {/* အဲ့ဒီ Category ရဲ့ ၅ ကားကို ပြမည့် Grid (16:9 ဖြင့် ပြင်ထားသည်) */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-5">
+                      {/* အဲ့ဒီ Category ရဲ့ ၅ ကားကို ပြမည့် အလျားလိုက် (Horizontal Scroll) စနစ် */}
+                      <div className="flex gap-4 overflow-x-auto no-scrollbar pb-4">
                         {catShows.map(item => (
-                          <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 hover:shadow-[0_0_15px_rgba(252,211,133,0.15)] transition-all flex flex-col shadow-lg">
+                          <div key={item.id} onClick={() => setSelectedShow(item)} className="w-[220px] sm:w-[260px] flex-none bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 hover:shadow-[0_0_15px_rgba(252,211,133,0.15)] transition-all flex flex-col shadow-lg">
                             <div className="aspect-[16/9] relative overflow-hidden bg-black">
                               <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"></div>
