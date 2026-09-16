@@ -1,7 +1,6 @@
 export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { initializeApp, getApps, getApp } from "firebase/app";
-// 🌟 အဓိက ပြင်ဆင်ချက် - Edge ပေါ်တွင် အလုပ်လုပ်စေရန် firestore အစား firestore/lite ကို သုံးရပါမည်
 import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore/lite";
 
 // --- FIREBASE CONFIG ---
@@ -21,20 +20,18 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const BOT_TOKEN = "8962875521:AAHhx5Bo6Fa73QgEiYWWZYzKmoGWkHbe2K4"; // ⚠️ သင့် Bot Token ကို ဤနေရာတွင် ထည့်ပါ
-    const ADMIN_GROUP_ID = "-1003824552410"; // ⚠️ Report ပို့ရန် သင့် Admin Group ID (ဥပမာ -100123...)
+    const BOT_TOKEN = "8962875521:AAHhx5Bo6Fa73QgEiYWWZYzKmoGWkHbe2K4"; 
+    const ADMIN_GROUP_ID = "-1003824552410"; 
 
     // 🌟 BOT DM (Start Command) ဖြင့် ဝင်လာသော User များအား Protect Content ဖြင့် ဗီဒီယိုပို့ပေးခြင်း
     if (body.message && body.message.chat && body.message.chat.type === 'private' && body.message.text && body.message.text.startsWith('/start ')) {
        const payload = body.message.text.split(' ')[1];
        if (payload) {
           try {
-             // Decode payload (Username ကို ပြန်ဖြည်ခြင်း)
              let b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
              while (b64.length % 4) b64 += '=';
              const decodedStr = atob(b64);
              
-             // Payload ဖြည်ပြီးနောက် Username ကို အတိအကျရမည်
              const [username, showId, epIndexStr] = decodedStr.split(':::');
              const epIndex = parseInt(epIndexStr, 10);
 
@@ -43,15 +40,14 @@ export async function POST(request: Request) {
              if (userSnap.exists()) {
                  const user = userSnap.data();
 
-                 // User အမှန်တကယ် ဝယ်ယူထားကြောင်း အတည်ပြုခြင်း
                  if (user.unlockedEpisodes && user.unlockedEpisodes.includes(`${showId}_${epIndex}`)) {
                      
-                     const showsSnap = await getDoc(doc(db, "SiteData", "shows"));
-                     const shows = showsSnap.exists() ? showsSnap.data().data : [];
-                     const show = shows.find((s: any) => s.id === showId);
+                     // Shows Collection ထဲမှ သက်ဆိုင်ရာ ဇာတ်ကားဖိုင် ၁ ခုတည်းကိုသာ တိုက်ရိုက်ဆွဲယူမည်
+                     const showSnap = await getDoc(doc(db, "Shows", showId));
+                     const show = showSnap.exists() ? (showSnap.data() as any) : null;
 
                      if (show && show.episodes && show.episodes[epIndex] && show.episodes[epIndex].links && show.episodes[epIndex].links.length > 0) {
-                         const tgUrl = show.episodes[epIndex].links[0].url; // Admin ၏ Master Channel မှ Link
+                         const tgUrl = show.episodes[epIndex].links[0].url; 
                          let fromChatId = '';
                          let messageId = '';
 
@@ -65,7 +61,6 @@ export async function POST(request: Request) {
                              messageId = parts[1];
                          }
 
-                         // Telegram သို့ လုံခြုံရေးအပြည့်ဖြင့် (Protect Content) ပို့ဆောင်ခြင်း
                          const copyRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/copyMessage`, {
                              method: 'POST',
                              headers: { 'Content-Type': 'application/json' },
@@ -73,13 +68,12 @@ export async function POST(request: Request) {
                                  chat_id: body.message.chat.id,
                                  from_chat_id: fromChatId,
                                  message_id: messageId,
-                                 protect_content: true // ဖုန်းထဲ Save / Forward / Screen Record လုံးဝ မရအောင် ပိတ်သည့် စနစ်
+                                 protect_content: true 
                              })
                          });
 
                          const copyData = await copyRes.json();
                          if (copyData.ok) {
-                             // Admin Group သို့ အောင်မြင်ကြောင်း Report ပို့ခြင်း
                              await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                                  method: 'POST', headers: { 'Content-Type': 'application/json' },
                                  body: JSON.stringify({ chat_id: ADMIN_GROUP_ID, text: `✅ Delivered: [${username}] ထံသို့ [${show.title_mm || show.title_en} - ${show.episodes[epIndex].epLabel}] အား အောင်မြင်စွာ ပို့ဆောင်ပြီးပါပြီ။ (Protected)` })
@@ -121,7 +115,6 @@ export async function POST(request: Request) {
     const movieId = match[1];
     const epNumber = parseInt(match[2], 10);
 
-    // Telegram Public Link တည်ဆောက်ခြင်း
     let tgLink = '';
     if (post.chat.username) {
       tgLink = `https://t.me/${post.chat.username}/${post.message_id}`;
@@ -130,37 +123,23 @@ export async function POST(request: Request) {
       tgLink = `https://t.me/c/${chatIdStr}/${post.message_id}`;
     }
 
-    // Firebase Database ထဲသို့ Link အလိုအလျောက် သွားထည့်ခြင်း
-    const showsRef = doc(db, "SiteData", "shows");
-    const showsSnap = await getDoc(showsRef);
+    // Firebase 'Shows' Collection ထဲသို့ Link အလိုအလျောက် သွားထည့်ခြင်း
+    const showRef = doc(db, "Shows", movieId);
+    const showSnap = await getDoc(showRef);
     
-    if (showsSnap.exists() && showsSnap.data().data) {
-      let shows = showsSnap.data().data;
-      let isUpdated = false;
+    if (showSnap.exists()) {
+      let show = showSnap.data() as any;
 
-      shows = shows.map((show: any) => {
-        if (show.id.toLowerCase() === movieId.toLowerCase()) {
-          if (show.episodes && show.episodes[epNumber - 1]) {
-            const ep = show.episodes[epNumber - 1];
-            if (!ep.links) ep.links = [];
-            
-            const alreadyExists = ep.links.some((l: any) => l.url === tgLink);
-            if (!alreadyExists) {
-              ep.links.push({ platform: 'Telegram', url: tgLink });
-              isUpdated = true;
-            }
-          }
+      if (show.episodes && show.episodes[epNumber - 1]) {
+        const ep = show.episodes[epNumber - 1];
+        if (!ep.links) ep.links = [];
+        
+        const alreadyExists = ep.links.some((l: any) => l.url === tgLink);
+        if (!alreadyExists) {
+          ep.links.push({ platform: 'Telegram', url: tgLink });
+          await setDoc(showRef, show);
+          console.log(`Auto-linked ${movieId} Episode ${epNumber} successfully`);
         }
-        return show;
-      });
-
-      if (isUpdated) {
-        const updatedShowIndex = shows.findIndex((s: any) => s.id.toLowerCase() === movieId.toLowerCase());
-        if (updatedShowIndex !== -1) {
-          const updatedShow = shows.splice(updatedShowIndex, 1)[0];
-          shows.unshift(updatedShow);
-        }
-        await setDoc(showsRef, { data: shows });
       }
     }
 

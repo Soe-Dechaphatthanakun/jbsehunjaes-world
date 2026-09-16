@@ -459,14 +459,29 @@ export default function SweetieWorldApp() {
         };
 
         const fetchShows = async () => {
-            const showsSnap = await getDoc(doc(db, "SiteData", "shows"));
-            if (showsSnap.exists() && showsSnap.data().data && showsSnap.data().data.length > 0) {
-               const parsedShows = showsSnap.data().data;
-               const migratedShows = parsedShows.map((s: any) => ({
-                  ...s, episodes: s.episodes.map((ep: any) => ({ ...ep, links: ep.links ? ep.links : (ep.link ? [{ platform: 'Default', url: ep.link }] : []) }))
-               }));
-               setShows(migratedShows);
-            } else { setShows(INITIAL_SHOWS); }
+            // ၁။ Shows Collection အသစ်မှ အရင်လှမ်းဆွဲမည်
+            const showsCol = collection(db, "Shows");
+            const showsSnap = await getDocs(showsCol);
+
+            if (!showsSnap.empty) {
+               const loadedShows = showsSnap.docs.map(d => d.data() as VideoCardData);
+               setShows(loadedShows);
+            } else {
+               // ၂။ Shows Collection အသစ်တွင် Data မရှိသေးပါက အဟောင်း (SiteData/shows) မှ ဆွဲပြီး Auto-Migrate ပြုလုပ်မည်
+               const oldSnap = await getDoc(doc(db, "SiteData", "shows"));
+               if (oldSnap.exists() && oldSnap.data().data && oldSnap.data().data.length > 0) {
+                  const oldShows = oldSnap.data().data;
+                  setShows(oldShows);
+
+                  // Data မပျောက်စေရန် အဟောင်းထဲမှ ဇာတ်ကားများကို Shows Collection အသစ်ထဲသို့ တစ်ခါတည်း တိုက်ရိုက် ကူးထည့်ပေးခြင်း
+                  oldShows.forEach(async (showItem: VideoCardData) => {
+                     await setDoc(doc(db, "Shows", showItem.id), showItem);
+                  });
+                  console.log("Auto-migrated shows to new 'Shows' collection successfully!");
+               } else {
+                  setShows(INITIAL_SHOWS);
+               }
+            }
         };
 
         const fetchMovieViews = async () => {
@@ -572,10 +587,11 @@ export default function SweetieWorldApp() {
       }
 
       // --- ၂။ User အားလုံးအတွက် မရှိမဖြစ် လိုအပ်သော Data များ ---
-      // NEW: ဇာတ်ကား Link အသစ်များကို Refresh လုပ်စရာမလိုဘဲ Auto-Update ဖြစ်စေရန်
-      const sSnap = await getDoc(doc(db, "SiteData", "shows"));
-      if (sSnap.exists() && sSnap.data().data) {
-         setShows(prev => JSON.stringify(prev) !== JSON.stringify(sSnap.data().data) ? sSnap.data().data : prev);
+      // NEW: ဇာတ်ကား Link အသစ်များကို Shows Collection အသစ်မှ လှမ်းဆွဲမည်
+      const sSnap = await getDocs(collection(db, "Shows"));
+      if (!sSnap.empty) {
+         const latestShows = sSnap.docs.map(d => d.data() as VideoCardData);
+         setShows(prev => JSON.stringify(prev) !== JSON.stringify(latestShows) ? latestShows : prev);
       }
       // Admin ဆိုရင် User အားလုံးကို မဆွဲတော့ဘဲ Active ဖြစ်သော User (၅၀) ကိုသာ ဆွဲမည် (Read Limit ကာကွယ်ရန်)
   if (currentUser?.role === 'admin') {
@@ -642,7 +658,6 @@ export default function SweetieWorldApp() {
   }, [isInitialLoad, currentUser?.role]);
 
   // 🌟 Admin သာလျှင် Auto-save အလုပ်လုပ်စေရန်နှင့် Write လေလွင့်မှုမှ ကာကွယ်ရန် (2 Seconds Delay ထည့်သွင်းထားသည်)
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "shows"), { data: shows }), 2000); return () => clearTimeout(t); } }, [shows, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "categories"), { data: categories }), 2000); return () => clearTimeout(t); } }, [categories, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "platforms"), { data: platforms }), 2000); return () => clearTimeout(t); } }, [platforms, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "promotions"), { data: promotions }), 2000); return () => clearTimeout(t); } }, [promotions, currentUser?.role]);
@@ -2118,10 +2133,16 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                <div className="flex justify-end gap-2">
                                  <button onClick={() => setUserDetailModal(u)} className="p-2 bg-zinc-800 rounded text-emerald-400 hover:bg-zinc-700 transition" title="View Details"><Eye className="w-4 h-4"/></button>
                                  <button onClick={() => {setEditUserForm({...u}); setEditUserRemark(''); setEditUserModal({isOpen: true, mode: 'edit', oldUsername: u.username});}} className="p-2 bg-zinc-800 rounded text-blue-400 hover:bg-zinc-700 transition" title="Edit User"><Edit className="w-4 h-4"/></button>
+                                 // ✅ အစားထိုးရမည့် Code အမှန်
                                  {u.username !== currentUser.username && (
                                    <button onClick={() => setConfirmModal({
                                       message: t.confirmDelDesc,
-                                      onConfirm: async () => { setUsers(users.filter(user => user.username !== u.username)); await deleteDoc(doc(db, "Users", u.username)); }
+                                      onConfirm: async () => { 
+                                         // Users Collection ပေါ်မှ ဖျက်မည်
+                                         await deleteDoc(doc(db, "Users", u.username));
+                                         setUsers(users.filter(user => user.username !== u.username)); 
+                                         showToast(t.msgDeleted); 
+                                      }
                                    })} className="p-2 bg-zinc-800 rounded text-red-400 hover:bg-zinc-700 transition" title="Delete User"><Trash2 className="w-4 h-4"/></button>
                                  )}
                                </div>
@@ -3084,23 +3105,20 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
   isSyncing.current = true; 
 
   try {
+    // 🌟 အထုပ်လိုက် မသိမ်းတော့ဘဲ သက်ဆိုင်ရာ ဇာတ်ကား Document တစ်ခုတည်းကိုသာ Shows Collection ထဲ သိမ်းမည်
+    await setDoc(doc(db, "Shows", itemToSave.id), itemToSave);
+
     if (editingShowId) {
       const updatedShows = [itemToSave, ...shows.filter(s => s.id !== editingShowId)];
       setShows(updatedShows);
-      await setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); 
       setEditingShowId(null);
     } else {
       const updatedShows = [itemToSave, ...shows];
       setShows(updatedShows);
-      await setDoc(doc(db, "SiteData", "shows"), { data: updatedShows }); 
-      
-      // ⚠️ ပြင်ဆင်ချက် - ဇာတ်ကားသစ်/အပိုင်းသစ် Noti များကို Database သို့ Save လုပ်ခြင်း အပြီးတိုင် ဖယ်ရှားလိုက်ပါပြီ
     }
     
     showToast(t.msgUploaded);
     setNewVideo({episodes:[], title_en: '', title_mm: '', vipTelegramLink: '', pointsPerEp: 20});
-    
-    // Save ပြီးသည်နှင့် Uploaded Content Tab သို့ အလိုအလျောက် ရွှေ့ပေးမည်
     setAdminActiveTab('uploaded_content');
     window.scrollTo({top:0, behavior: 'smooth'});
 
