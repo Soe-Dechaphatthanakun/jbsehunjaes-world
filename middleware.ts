@@ -4,11 +4,13 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const hostname = request.nextUrl.hostname;
 
-  // .pages.dev လင့်ခ်ဖြင့် ဝင်လာပါက စစ်ဆေးမည်
-  if (hostname === 'jbsehunjaes-world.pages.dev') {
+  // .pages.dev နှင့် .vercel.app လင့်ခ် (၂) ခုလုံးအတွက် စစ်ဆေးမည်
+  if (
+    hostname === 'jbsehunjaes-world.pages.dev' || 
+    hostname === 'jbsehunjaes-world.vercel.app'
+  ) {
     const url = request.nextUrl.clone();
     
-    // ⚠️ ဤနေရာတွင် သင့်၏ .com Domain အတိအကျကို ပြင်ထည့်နိုင်ပါသည်
     url.hostname = 'jbsehunjae.com'; 
     url.port = ''; 
     
