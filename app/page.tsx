@@ -646,47 +646,65 @@ export default function SweetieWorldApp() {
     if (isLoadMore && (!lastVisible || !hasMore)) return;
     setLoadingMore(true);
     try {
-        let baseQuery;
-        if (cat === 'All' || cat === 'Latest Releases') {
-            baseQuery = query(collection(db, "Shows"), orderBy("id", "desc"));
+        if (cat === 'All') {
+            // Category အားလုံးအတွက် နောက်ဆုံး ၅ ကားစီ သီးသန့်ဆွဲမည် (Front Page တွင် ပြရန်)
+            const promises = categories.filter(c => c !== 'All').map(async (cName) => {
+                const q = query(collection(db, "Shows"), where("category", "==", cName), orderBy("id", "desc"), limit(5));
+                const snap = await getDocs(q);
+                return snap.docs.map(d => d.data() as VideoCardData);
+            });
+            const results = await Promise.all(promises);
+            const allFrontPageShows = results.flat();
+            
+            // ပုံစံတူ ဇာတ်ကားများ ထပ်မနေအောင် စစ်ထုတ်ခြင်း
+            const uniqueShows = Array.from(new Map(allFrontPageShows.map(s => [s.id, s])).values());
+            
+            setShows(uniqueShows);
+            setHasMore(false); // Front page မှာ Next Page မလိုပါ၊ View All နှိပ်မှ သွားမည်
+            setLastVisible(null);
         } else {
-            baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("id", "desc"));
-        }
+            // သက်ဆိုင်ရာ Category (သို့) Latest Releases နှိပ်လျှင် ၃၀ ကားစီ ဆွဲမည်
+            let baseQuery;
+            if (cat === 'Latest Releases') {
+                baseQuery = query(collection(db, "Shows"), orderBy("id", "desc"));
+            } else {
+                baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("id", "desc"));
+            }
 
-        const finalQuery = isLoadMore 
-            ? query(baseQuery, startAfter(lastVisible), limit(30))
-            : query(baseQuery, limit(30));
+            const finalQuery = isLoadMore 
+                ? query(baseQuery, startAfter(lastVisible), limit(30))
+                : query(baseQuery, limit(30));
 
-        const showsSnap = await getDocs(finalQuery);
+            const showsSnap = await getDocs(finalQuery);
 
-        if (!showsSnap.empty) {
-            const newShows = showsSnap.docs.map(d => d.data() as VideoCardData);
-            if (isLoadMore) {
-                setShows(prev => {
-                    const prevMap = new Map(prev.map(s => [s.id, s]));
-                    newShows.forEach(s => prevMap.set(s.id, s));
-                    const combined = Array.from(prevMap.values());
-                    combined.sort((a, b) => {
+            if (!showsSnap.empty) {
+                const newShows = showsSnap.docs.map(d => d.data() as VideoCardData);
+                if (isLoadMore) {
+                    setShows(prev => {
+                        const prevMap = new Map(prev.map(s => [s.id, s]));
+                        newShows.forEach(s => prevMap.set(s.id, s));
+                        const combined = Array.from(prevMap.values());
+                        combined.sort((a, b) => {
+                            const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
+                            const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
+                            return timeB - timeA;
+                        });
+                        return combined;
+                    });
+                } else {
+                    newShows.sort((a, b) => {
                         const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
                         const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
                         return timeB - timeA;
                     });
-                    return combined;
-                });
+                    setShows(newShows); 
+                }
+                setLastVisible(showsSnap.docs[showsSnap.docs.length - 1]);
+                setHasMore(showsSnap.docs.length === 30);
             } else {
-                // Category အသစ်ရွေးရင် အဟောင်းတွေဖျက်ပြီး သက်ဆိုင်ရာကား အသစ် ၃၀ ပဲပြမည်
-                newShows.sort((a, b) => {
-                    const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
-                    const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
-                    return timeB - timeA;
-                });
-                setShows(newShows); 
+                if (!isLoadMore) setShows([]);
+                setHasMore(false);
             }
-            setLastVisible(showsSnap.docs[showsSnap.docs.length - 1]);
-            setHasMore(showsSnap.docs.length === 30);
-        } else {
-            if (!isLoadMore) setShows([]);
-            setHasMore(false);
         }
     } catch (error: any) {
         console.error("Fetch error:", error);
@@ -3334,76 +3352,122 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
           </div>
 
 		<main className="w-full px-4 mt-6 pb-12 font-sans">
-            {/* Movies Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-5">
-              {(() => {
-                // UI Page အတွက် ၃၀ ပုဒ်စီ ဖြတ်ထုတ်ခြင်း
-                const paginatedGridShows = filteredShows.slice((uiPage - 1) * itemsPerPage, uiPage * itemsPerPage);
-                
-                if (paginatedGridShows.length === 0) {
-                  return <div className="col-span-full py-16 text-center text-zinc-500 text-sm font-bold bg-[#1a1a1a] rounded-xl border border-zinc-800">No shows found in this category.</div>;
-                }
-
-                return paginatedGridShows.map(item => (
-                  <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 hover:shadow-[0_0_15px_rgba(252,211,133,0.15)] transition-all flex flex-col shadow-lg">
-                    <div className="aspect-[3/4] sm:aspect-[16/9] lg:aspect-[4/5] relative overflow-hidden bg-black">
-                      <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"></div>
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="w-12 h-12 rounded-full bg-[#fcd385]/90 flex items-center justify-center shadow-[0_0_20px_rgba(252,211,133,0.5)] scale-90 group-hover:scale-100 transition-transform"><Play className="w-5 h-5 text-[#3e1717] ml-1" /></div>
+            {activeCategory === 'All' && !searchQuery ? (
+              <div className="space-y-10">
+                {categories.filter(c => c !== 'All').map(cat => {
+                  // Category တစ်ခုချင်းစီအတွက် ၅ ကားသာ ယူမည်
+                  const catShows = shows.filter(s => s.category === cat).slice(0, 5);
+                  if (catShows.length === 0) return null;
+                  
+                  return (
+                    <div key={cat} className="space-y-4">
+                      {/* Category ခေါင်းစဉ် နှင့် View All ခလုတ် */}
+                      <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                        <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
+                          {cat}
+                        </h2>
+                        <button 
+                          onClick={() => { setActiveCategory(cat); setUiPage(1); window.scrollTo({top:0, behavior: 'smooth'}); }} 
+                          className="text-xs text-zinc-400 hover:text-[#fcd385] transition flex items-center gap-1 font-bold group"
+                        >
+                          View all <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        </button>
                       </div>
-                      <div className="absolute top-2 left-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border border-[#fcd385]/30 text-[#fcd385] text-[10px] sm:text-xs font-black px-2 py-0.5 rounded shadow">{item.totalEpisodes} EP</div>
+                      
+                      {/* အဲ့ဒီ Category ရဲ့ ၅ ကားကို ပြမည့် Grid (16:9 ဖြင့် ပြင်ထားသည်) */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-5">
+                        {catShows.map(item => (
+                          <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 hover:shadow-[0_0_15px_rgba(252,211,133,0.15)] transition-all flex flex-col shadow-lg">
+                            <div className="aspect-[16/9] relative overflow-hidden bg-black">
+                              <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"></div>
+                              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="w-12 h-12 rounded-full bg-[#fcd385]/90 flex items-center justify-center shadow-[0_0_20px_rgba(252,211,133,0.5)] scale-90 group-hover:scale-100 transition-transform"><Play className="w-5 h-5 text-[#3e1717] ml-1" /></div>
+                              </div>
+                              <div className="absolute top-2 left-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border border-[#fcd385]/30 text-[#fcd385] text-[10px] sm:text-xs font-black px-2 py-0.5 rounded shadow">{item.totalEpisodes} EP</div>
+                            </div>
+                            <div className="p-3 flex-1 flex flex-col justify-between">
+                              <h3 className="text-sm font-bold text-white line-clamp-1">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
+                              <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">{item.category}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="p-3 flex-1 flex flex-col justify-between">
-                      <h3 className="text-sm font-bold text-white line-clamp-1">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
-                      <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">{item.category}</p>
-                    </div>
-                  </div>
-                ));
-              })()}
-            </div>
-
-            {/* Numbered Pagination Buttons (1, 2, 3, Next) */}
-            {!searchQuery && (
-              <div className="flex flex-wrap justify-center items-center gap-2 mt-12 font-bold text-xs sm:text-sm">
-                
-                <button 
-                  onClick={() => setUiPage(prev => Math.max(1, prev - 1))}
-                  disabled={uiPage === 1}
-                  className="px-3 py-2 sm:px-4 bg-black text-zinc-400 border border-zinc-800 rounded-lg hover:text-white hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition"
-                >
-                  {lang === 'en' ? 'Previous' : 'ယခင်'}
-                </button>
-
-                {/* Local Loaded Pages List */}
-                {Array.from({ length: Math.ceil(filteredShows.length / itemsPerPage) }, (_, i) => i + 1).map(num => (
-                  <button 
-                    key={num} 
-                    onClick={() => setUiPage(num)}
-                    className={`min-w-[32px] h-8 sm:min-w-[40px] sm:h-10 flex items-center justify-center rounded-lg transition border ${uiPage === num ? 'bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] border-[#fcd385] shadow-[0_0_10px_rgba(252,211,133,0.4)]' : 'bg-black text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-500'}`}
-                  >
-                    {num}
-                  </button>
-                ))}
-
-                {/* Load More Trigger disguised as Next */}
-                <button 
-                  onClick={async () => {
-                     const totalPages = Math.ceil(filteredShows.length / itemsPerPage);
-                     if (uiPage < totalPages) {
-                         setUiPage(uiPage + 1); // Go to next local page
-                     } else if (hasMore) {
-                         await fetchMovies(true, activeCategory); // Fetch exactly 30 more from DB
-                         setUiPage(uiPage + 1); // Automatically move to newly fetched page
-                     }
-                  }}
-                  disabled={loadingMore || (uiPage === Math.ceil(filteredShows.length / itemsPerPage) && !hasMore)}
-                  className="px-3 py-2 sm:px-4 bg-[#1f1f1f] text-[#fcd385] border border-[#fcd385]/30 rounded-lg hover:bg-[#2b0303] hover:border-[#fcd385] disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center gap-1"
-                >
-                  {loadingMore ? <RefreshCw className="w-4 h-4 animate-spin text-[#fcd385]" /> : (lang === 'en' ? 'Next page' : 'နောက်သို့')}
-                </button>
-
+                  );
+                })}
               </div>
+            ) : (
+              <>
+                {/* Movies Grid for Specific Category (30 Items / Paginated 16:9) */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-5">
+                  {(() => {
+                    const paginatedGridShows = filteredShows.slice((uiPage - 1) * itemsPerPage, uiPage * itemsPerPage);
+                    
+                    if (paginatedGridShows.length === 0) {
+                      return <div className="col-span-full py-16 text-center text-zinc-500 text-sm font-bold bg-[#1a1a1a] rounded-xl border border-zinc-800">No shows found in this category.</div>;
+                    }
+
+                    return paginatedGridShows.map(item => (
+                      <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 hover:shadow-[0_0_15px_rgba(252,211,133,0.15)] transition-all flex flex-col shadow-lg">
+                        <div className="aspect-[16/9] relative overflow-hidden bg-black">
+                          <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"></div>
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="w-12 h-12 rounded-full bg-[#fcd385]/90 flex items-center justify-center shadow-[0_0_20px_rgba(252,211,133,0.5)] scale-90 group-hover:scale-100 transition-transform"><Play className="w-5 h-5 text-[#3e1717] ml-1" /></div>
+                          </div>
+                          <div className="absolute top-2 left-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border border-[#fcd385]/30 text-[#fcd385] text-[10px] sm:text-xs font-black px-2 py-0.5 rounded shadow">{item.totalEpisodes} EP</div>
+                        </div>
+                        <div className="p-3 flex-1 flex flex-col justify-between">
+                          <h3 className="text-sm font-bold text-white line-clamp-1">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
+                          <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">{item.category}</p>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+
+                {/* Numbered Pagination Buttons (1, 2, 3, Next) */}
+                {!searchQuery && (
+                  <div className="flex flex-wrap justify-center items-center gap-2 mt-12 font-bold text-xs sm:text-sm">
+                    
+                    <button 
+                      onClick={() => setUiPage(prev => Math.max(1, prev - 1))}
+                      disabled={uiPage === 1}
+                      className="px-3 py-2 sm:px-4 bg-black text-zinc-400 border border-zinc-800 rounded-lg hover:text-white hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                    >
+                      {lang === 'en' ? 'Previous' : 'ယခင်'}
+                    </button>
+
+                    {Array.from({ length: Math.ceil(filteredShows.length / itemsPerPage) }, (_, i) => i + 1).map(num => (
+                      <button 
+                        key={num} 
+                        onClick={() => setUiPage(num)}
+                        className={`min-w-[32px] h-8 sm:min-w-[40px] sm:h-10 flex items-center justify-center rounded-lg transition border ${uiPage === num ? 'bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] border-[#fcd385] shadow-[0_0_10px_rgba(252,211,133,0.4)]' : 'bg-black text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-500'}`}
+                      >
+                        {num}
+                      </button>
+                    ))}
+
+                    <button 
+                      onClick={async () => {
+                         const totalPages = Math.ceil(filteredShows.length / itemsPerPage);
+                         if (uiPage < totalPages) {
+                             setUiPage(uiPage + 1);
+                         } else if (hasMore) {
+                             await fetchMovies(true, activeCategory);
+                             setUiPage(uiPage + 1);
+                         }
+                      }}
+                      disabled={loadingMore || (uiPage === Math.ceil(filteredShows.length / itemsPerPage) && !hasMore)}
+                      className="px-3 py-2 sm:px-4 bg-[#1f1f1f] text-[#fcd385] border border-[#fcd385]/30 rounded-lg hover:bg-[#2b0303] hover:border-[#fcd385] disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center gap-1"
+                    >
+                      {loadingMore ? <RefreshCw className="w-4 h-4 animate-spin text-[#fcd385]" /> : (lang === 'en' ? 'Next page' : 'နောက်သို့')}
+                    </button>
+
+                  </div>
+                )}
+              </>
             )}
           </main>
         </>
