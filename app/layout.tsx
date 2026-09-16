@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Jbsehunjae",
-  description: "Welcome to Jbsehunjae's World",
+  title: "Jbsehunjae's World",
+  description: "မြန်မာစာတန်းထိုး ဇာတ်ကားများနှင့် ဇာတ်လမ်းတွဲများကို Jbsehunjae's World တွင် ကြည့်ရှုနိုင်ပါသည်။",
+  keywords: "jbsehunjae, jbsehunjae's world, myanmar movies, series, watch movies online",
 };
 
 export default function RootLayout({
