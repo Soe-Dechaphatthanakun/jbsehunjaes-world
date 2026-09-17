@@ -240,7 +240,7 @@ export default function SweetieWorldApp() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [uiPage, setUiPage] = useState(1);
-  const itemsPerPage = 30;
+  const itemsPerPage = 15;
 
   // NEW: Movie Views States
   const [movieViews, setMovieViews] = useState<Record<string, MovieViewData>>({});
@@ -591,7 +591,7 @@ export default function SweetieWorldApp() {
          }
       }
 
-      const qShows = query(collection(db, "Shows"), orderBy("id", "desc"), limit(30));
+      const qShows = query(collection(db, "Shows"), orderBy("id", "desc"), limit(15));
       const sSnap = await getDocs(qShows);
       if (!sSnap.empty) {
          const latestShows = sSnap.docs.map(d => d.data() as VideoCardData);
@@ -672,8 +672,8 @@ export default function SweetieWorldApp() {
             }
 
             const finalQuery = isLoadMore 
-                ? query(baseQuery, startAfter(lastVisible), limit(30))
-                : query(baseQuery, limit(30));
+                ? query(baseQuery, startAfter(lastVisible), limit(15))
+                : query(baseQuery, limit(15));
 
             const showsSnap = await getDocs(finalQuery);
 
@@ -700,7 +700,7 @@ export default function SweetieWorldApp() {
                     setShows(newShows); 
                 }
                 setLastVisible(showsSnap.docs[showsSnap.docs.length - 1]);
-                setHasMore(showsSnap.docs.length === 30);
+                setHasMore(showsSnap.docs.length === 15);
             } else {
                 if (!isLoadMore) setShows([]);
                 setHasMore(false);
