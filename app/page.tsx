@@ -462,7 +462,7 @@ export default function SweetieWorldApp() {
 
         const fetchShows = async () => {
             const showsCol = collection(db, "Shows");
-            const q = query(showsCol, orderBy("updatedAt", "desc"), limit(20));
+            const q = query(showsCol, orderBy("id", "desc"), limit(20));
             const showsSnap = await getDocs(q);
 
             if (!showsSnap.empty) {
@@ -591,7 +591,7 @@ export default function SweetieWorldApp() {
          }
       }
 
-      const qShows = query(collection(db, "Shows"), orderBy("updatedAt", "desc"), limit(15));
+      const qShows = query(collection(db, "Shows"), orderBy("id", "desc"), limit(15));
       const sSnap = await getDocs(qShows);
       if (!sSnap.empty) {
          const latestShows = sSnap.docs.map(d => d.data() as VideoCardData);
