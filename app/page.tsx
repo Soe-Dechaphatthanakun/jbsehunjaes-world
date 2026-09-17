@@ -462,7 +462,7 @@ export default function SweetieWorldApp() {
 
         const fetchShows = async () => {
             const showsCol = collection(db, "Shows");
-            const q = query(showsCol, orderBy("updatedAt", "desc"), limit(20));
+            const q = query(showsCol, orderBy("updatedAt", "desc"), limit(15));
             const showsSnap = await getDocs(q);
 
             if (!showsSnap.empty) {
@@ -539,7 +539,8 @@ export default function SweetieWorldApp() {
             await Promise.all([
                 fetchDoc("pointRequests", setPointRequests, []),
                 fetchDoc("adminLogs", setAdminLogs, []),
-                fetchDoc("notifications", setNotifications, [])
+                fetchDoc("notifications", setNotifications, []),
+                fetchMovieViews() 
             ]);
         }
         
@@ -710,7 +711,8 @@ export default function SweetieWorldApp() {
     let lastFocusSync = 0;
     const handleFocus = () => { 
         const now = Date.now();
-        if (now - lastFocusSync > 60000) { 
+        // Admin ဖြစ်မှသာလျှင် ၅ မိနစ်တစ်ခါ Auto Sync လုပ်စေမည် (User များအတွက် Read သက်သာစေရန်)
+        if (now - lastFocusSync > 300000 && currentUser?.role === 'admin') { 
             syncLatestData(); 
             lastFocusSync = now;
         }
