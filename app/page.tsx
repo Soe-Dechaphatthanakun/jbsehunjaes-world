@@ -462,7 +462,7 @@ export default function SweetieWorldApp() {
 
         const fetchShows = async () => {
             const showsCol = collection(db, "Shows");
-            const q = query(showsCol, orderBy("id", "desc"), limit(30));
+            const q = query(showsCol, orderBy("updatedAt", "desc"), limit(20));
             const showsSnap = await getDocs(q);
 
             if (!showsSnap.empty) {
@@ -591,7 +591,7 @@ export default function SweetieWorldApp() {
          }
       }
 
-      const qShows = query(collection(db, "Shows"), orderBy("id", "desc"), limit(15));
+      const qShows = query(collection(db, "Shows"), orderBy("updatedAt", "desc"), limit(15));
       const sSnap = await getDocs(qShows);
       if (!sSnap.empty) {
          const latestShows = sSnap.docs.map(d => d.data() as VideoCardData);
@@ -649,7 +649,7 @@ export default function SweetieWorldApp() {
         if (cat === 'All') {
             // Category အားလုံးအတွက် နောက်ဆုံး ၅ ကားစီ သီးသန့်ဆွဲမည် (Front Page တွင် ပြရန်)
             const promises = categories.filter(c => c !== 'All').map(async (cName) => {
-                const q = query(collection(db, "Shows"), where("category", "==", cName), orderBy("id", "desc"), limit(5));
+                const q = query(collection(db, "Shows"), where("category", "==", cName), orderBy("updatedAt", "desc"), limit(5));
                 const snap = await getDocs(q);
                 return snap.docs.map(d => d.data() as VideoCardData);
             });
@@ -666,9 +666,9 @@ export default function SweetieWorldApp() {
             // သက်ဆိုင်ရာ Category (သို့) Latest Releases နှိပ်လျှင် ၃၀ ကားစီ ဆွဲမည်
             let baseQuery;
             if (cat === 'Latest Releases') {
-                baseQuery = query(collection(db, "Shows"), orderBy("id", "desc"));
+                baseQuery = query(collection(db, "Shows"), orderBy("updatedAt", "desc"));
             } else {
-                baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("id", "desc"));
+                baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("updatedAt", "desc"));
             }
 
             const finalQuery = isLoadMore 
