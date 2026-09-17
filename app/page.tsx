@@ -609,7 +609,7 @@ export default function SweetieWorldApp() {
       }
 
       if (currentUser?.role === 'admin') {
-         const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(50));
+         const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(10));
          const uSnap = await getDocs(uQuery);
          try {
              const countSnap = await getCountFromServer(collection(db, "Users"));
@@ -1317,7 +1317,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
   const handleSearchUser = async () => {
     if (!adminUserSearch.trim()) {
         // ဘာမှ မရိုက်ဘဲ Search နှိပ်ပါက Active 50 ကို ပြန်ခေါ်မည်
-        const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(50));
+        const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(10));
         const uSnap = await getDocs(uQuery);
         setUsers(uSnap.docs.map(d => d.data() as UserData));
         return;
