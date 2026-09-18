@@ -3334,7 +3334,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 
                 return paginatedGridShows.map(item => (
                   <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 hover:shadow-[0_0_15px_rgba(252,211,133,0.15)] transition-all flex flex-col shadow-lg">
-                    <div className="aspect-[3/4] sm:aspect-[16/9] lg:aspect-[4/5] relative overflow-hidden bg-black">
+                    <div className="aspect-[3/4] md:aspect-[4/5] relative overflow-hidden bg-black">
                       <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"></div>
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -3444,7 +3444,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
               </div>
 
               <div className="h-48 sm:h-64 relative shrink-0">
-                 <img src={selectedShow.image} alt="cover" className="w-full h-full object-cover" />
+                 <img src={selectedShow.image} alt="cover" className="w-full h-full object-cover object-top" />
                  <div className="absolute inset-0 bg-gradient-to-t from-[#161616] to-transparent"></div>
                  <div className="absolute bottom-4 left-4 right-4">
                    <h2 className="text-2xl font-black text-white drop-shadow-lg">{lang === 'en' ? (selectedShow.title_en || selectedShow.title_mm) : (selectedShow.title_mm || selectedShow.title_en)}</h2>
