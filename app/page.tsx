@@ -3443,10 +3443,18 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                  }} className="text-white/50 hover:text-white bg-black/50 p-1.5 rounded-full transition"><X className="w-5 h-5"/></button>
               </div>
 
-              <div className="h-48 sm:h-64 relative shrink-0">
-                 <img src={selectedShow.image} alt="cover" className="w-full h-full object-cover object-top" />
-                 <div className="absolute inset-0 bg-gradient-to-t from-[#161616] to-transparent"></div>
-                 <div className="absolute bottom-4 left-4 right-4">
+              <div className="h-56 sm:h-72 relative shrink-0 flex items-center justify-center bg-black overflow-hidden">
+                 {/* နောက်ခံအဝါး (Blurred Background) အပြည့်ထည့်ခြင်း */}
+                 <img src={selectedShow.image} alt="bg-cover" className="absolute inset-0 w-full h-full object-cover opacity-40 blur-xl scale-110" />
+                 
+                 {/* ဇာတ်ကားပုံအပြည့် (Full Poster) ကို အလယ်တွင် ထားခြင်း */}
+                 <img src={selectedShow.image} alt="cover" className="relative h-[90%] w-auto object-contain z-0 mt-[-20px] rounded shadow-2xl" />
+                 
+                 {/* အမည်းရောင် Gradient အရိပ် */}
+                 <div className="absolute inset-0 bg-gradient-to-t from-[#161616] via-[#161616]/30 to-transparent z-10"></div>
+                 
+                 {/* ဇာတ်ကား ခေါင်းစဉ် နှင့် အပိုင်းများ */}
+                 <div className="absolute bottom-4 left-4 right-4 z-20">
                    <h2 className="text-2xl font-black text-white drop-shadow-lg">{lang === 'en' ? (selectedShow.title_en || selectedShow.title_mm) : (selectedShow.title_mm || selectedShow.title_en)}</h2>
                    <p className="text-sm text-[#fcd385] font-bold">{selectedShow.category} • {selectedShow.totalEpisodes} {t.episodes}</p>
                  </div>
