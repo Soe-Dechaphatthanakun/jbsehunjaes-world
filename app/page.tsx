@@ -3428,7 +3428,8 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md font-sans">
            <div className="bg-gradient-to-b from-[#2b0303] to-[#161616] border border-[#fcd385]/30 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.9)] relative overflow-hidden">
               
-              {/* NEW: Copy Link Button & Close Button (Z-index ကို ၁၀၀ အထိ တင်ထားသဖြင့် အမြဲနှိပ်၍ရမည်) */}
+              
+              {/* Copy Link & Close Buttons (z-[100] အတိုင်းထားမည်၊ အမြဲနှိပ်၍ရမည်) */}
               <div className="absolute top-4 right-4 z-[100] flex items-center gap-2">
                  <button onClick={() => {
                     const directLink = `${window.location.origin}${window.location.pathname}?show=${selectedShow.id}`;
@@ -3442,27 +3443,21 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                  }} className="text-white hover:text-red-400 bg-black/60 hover:bg-black p-2 rounded-full transition backdrop-blur-md shadow-lg border border-white/10"><X className="w-5 h-5"/></button>
               </div>
 
-              {/* Banner Area (အမြင့်ကို ပိုကြီးပေးထားသည်) */}
-              <div className="h-[300px] sm:h-[400px] relative shrink-0 bg-black rounded-t-2xl overflow-hidden">
+              {/* ပုံအပြည့် / ဘောင်အပြည့်ပြမည့် နေရာ (Full Bleed Poster Style) */}
+              <div className="h-[350px] sm:h-[450px] relative shrink-0 bg-black rounded-t-2xl overflow-hidden">
                  
-                 {/* ၁။ အနောက်ခံ အဝါး (Ambient Blur) */}
-                 <img src={selectedShow.image} alt="bg-cover" className="absolute inset-0 w-full h-full object-cover opacity-50 blur-3xl scale-125 select-none" />
+                 {/* object-top သုံးထားသဖြင့် 3:4 ပုံဖြစ်နေပါစေ ခေါင်းလုံးဝမပြတ်ဘဲ ဘောင်အပြည့်လှလှပပ ဝင်ပါမည် */}
+                 <img src={selectedShow.image} alt="cover" className="absolute inset-0 w-full h-full object-cover object-top" />
                  
-                 {/* ၂။ အရောင်ညှိရန် အမည်းရောင်အလွှာများ */}
-                 <div className="absolute inset-0 bg-black/30 z-0"></div>
-                 <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#161616] via-[#161616]/80 to-transparent z-10"></div>
-
-                 {/* ၃။ အလယ်က ဇာတ်ကားပုံ အပြည့် (Full Clear Poster) */}
-                 <div className="absolute inset-0 flex items-center justify-center pt-6 pb-24 z-20">
-                     <img src={selectedShow.image} alt="cover" className="h-full w-auto max-w-[85%] object-contain rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.8)] border border-white/10" />
-                 </div>
-
-                 {/* ၄။ ဇာတ်ကား ခေါင်းစဉ် နှင့် အချက်အလက်များ */}
-                 <div className="absolute bottom-0 left-0 right-0 p-5 z-30">
-                   <h2 className="text-xl sm:text-3xl font-black text-white drop-shadow-xl line-clamp-2 leading-tight">
+                 {/* စာသားတွေ ထင်းနေအောင် အောက်ဘက်ကနေ အမည်းရောင် Gradient တင်ပေးခြင်း (ပုံကို မကွယ်စေပါ) */}
+                 <div className="absolute inset-0 bg-gradient-to-t from-[#161616] via-[#161616]/50 to-transparent z-10"></div>
+                 
+                 {/* ဇာတ်ကား ခေါင်းစဉ် နှင့် အချက်အလက်များ */}
+                 <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-6 z-20">
+                   <h2 className="text-2xl sm:text-3xl font-black text-white drop-shadow-xl line-clamp-2 leading-tight">
                      {lang === 'en' ? (selectedShow.title_en || selectedShow.title_mm) : (selectedShow.title_mm || selectedShow.title_en)}
                    </h2>
-                   <p className="text-xs sm:text-sm text-[#fcd385] font-bold mt-2 drop-shadow-md">
+                   <p className="text-sm text-[#fcd385] font-bold mt-2 drop-shadow-md">
                      {selectedShow.category} • {selectedShow.totalEpisodes} {t.episodes}
                    </p>
                  </div>
