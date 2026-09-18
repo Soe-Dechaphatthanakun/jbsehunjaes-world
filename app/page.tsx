@@ -3334,7 +3334,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 
                 return paginatedGridShows.map(item => (
                   <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 hover:shadow-[0_0_15px_rgba(252,211,133,0.15)] transition-all flex flex-col shadow-lg">
-                    <div className="aspect-[16/9] relative overflow-hidden bg-black">
+                    <div className="aspect-[3/4] sm:aspect-[16/9] lg:aspect-[4/5] relative overflow-hidden bg-black">
                       <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"></div>
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
