@@ -240,7 +240,7 @@ export default function SweetieWorldApp() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [uiPage, setUiPage] = useState(1);
-  const itemsPerPage = 15;
+  const itemsPerPage = 10;
 
   // NEW: Movie Views States
   const [movieViews, setMovieViews] = useState<Record<string, MovieViewData>>({});
@@ -462,7 +462,7 @@ export default function SweetieWorldApp() {
 
         const fetchShows = async () => {
             const showsCol = collection(db, "Shows");
-            const q = query(showsCol, orderBy("updatedAt", "desc"), limit(15));
+            const q = query(showsCol, orderBy("updatedAt", "desc"), limit(10));
             const showsSnap = await getDocs(q);
 
             if (!showsSnap.empty) {
@@ -592,7 +592,7 @@ export default function SweetieWorldApp() {
          }
       }
 
-      const qShows = query(collection(db, "Shows"), orderBy("updatedAt", "desc"), limit(15));
+      const qShows = query(collection(db, "Shows"), orderBy("updatedAt", "desc"), limit(10));
       const sSnap = await getDocs(qShows);
       if (!sSnap.empty) {
          const latestShows = sSnap.docs.map(d => d.data() as VideoCardData);
@@ -655,8 +655,8 @@ export default function SweetieWorldApp() {
         }
 
         const finalQuery = isLoadMore 
-            ? query(baseQuery, startAfter(lastVisible), limit(15))
-            : query(baseQuery, limit(15));
+            ? query(baseQuery, startAfter(lastVisible), limit(10))
+            : query(baseQuery, limit(10));
 
         const showsSnap = await getDocs(finalQuery);
 
@@ -683,7 +683,7 @@ export default function SweetieWorldApp() {
                 setShows(newShows); 
             }
             setLastVisible(showsSnap.docs[showsSnap.docs.length - 1]);
-            setHasMore(showsSnap.docs.length === 15);
+            setHasMore(showsSnap.docs.length === 10);
         } else {
             if (!isLoadMore) setShows([]);
             setHasMore(false);
