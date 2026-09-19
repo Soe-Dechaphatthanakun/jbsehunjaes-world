@@ -592,22 +592,6 @@ export default function SweetieWorldApp() {
          }
       }
 
-      const qShows = query(collection(db, "Shows"), orderBy("updatedAt", "desc"), limit(10));
-      const sSnap = await getDocs(qShows);
-      if (!sSnap.empty) {
-         const latestShows = sSnap.docs.map(d => d.data() as VideoCardData);
-         setShows(prev => {
-            const prevMap = new Map(prev.map(s => [s.id, s]));
-            latestShows.forEach(s => prevMap.set(s.id, s));
-            const combined = Array.from(prevMap.values());
-            combined.sort((a, b) => {
-               const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
-               const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
-               return timeB - timeA;
-            });
-            return combined;
-         });
-      }
 
       if (currentUser?.role === 'admin') {
          const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(10));
@@ -1734,10 +1718,10 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                       <div className="flex items-center gap-3"><Key className="w-4 h-4"/> {t.changePwd}</div>
                       <ChevronRight className="w-4 h-4 text-white/50"/>
                     </button>
+                    {/* NEW: Logout နှိပ်သည်နှင့် Background Sync များပြတ်တောက်သွားစေရန် window.location.reload() ကို အသုံးပြုထားသည် */}
                     <button onClick={() => {
-                      setCurrentUser(null);
-                      localStorage.removeItem('jbsehunjaes_auth'); // Logout တဲ့အခါ Remember Me ပါဖျက်မည်
-                      setUserMenuOpen(false);
+                      localStorage.removeItem('jbsehunjaes_auth');
+                      window.location.reload(); 
                     }} className="w-full flex items-center justify-between p-3 bg-black/20 hover:bg-black/40 rounded-xl transition text-white font-bold text-sm">
                       <div className="flex items-center gap-3"><LogOut className="w-4 h-4"/> {t.logout}</div>
                       <ChevronRight className="w-4 h-4 text-white/50"/>
