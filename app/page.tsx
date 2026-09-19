@@ -2333,7 +2333,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
   } finally {
     isSyncing.current = false; // Auto-sync ပြန်ဖွင့်မည်
   }
-}} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-2 rounded-lg font-bold transition flex-1 md:flex-none">
+}} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-2 rounded-lg font-bold transition-all flex-1 md:flex-none shadow-[0_4px_0_#047857] active:shadow-none active:translate-y-1">
   {t.approveBtn}
 </button>
                           
@@ -2358,7 +2358,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                  showToast("Request Rejected");
                                }
                              });
-                          }} className="bg-red-800 hover:bg-red-700 text-white text-xs px-4 py-2 rounded-lg font-bold transition flex-1 md:flex-none">
+                          }} className="bg-red-800 hover:bg-red-700 text-white text-xs px-4 py-2 rounded-lg font-bold transition-all flex-1 md:flex-none shadow-[0_4px_0_#7f1d1d] active:shadow-none active:translate-y-1">
                             {t.rejectBtn}
                           </button>
                         </div>
@@ -3237,11 +3237,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
   } finally {
     isSyncing.current = false; 
   }
-}} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-3 rounded-lg shadow-lg hover:brightness-110 transition">
+}} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-3 rounded-lg hover:brightness-110 transition-all shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1">
   {editingShowId ? t.updateBtn : t.saveBtn}
 </button>
                         {editingShowId && (
-                          <button onClick={() => {setEditingShowId(null); setNewVideo({episodes:[], title_en: '', title_mm: '', vipTelegramLink: '', pointsPerEp: 20});}} className="px-6 bg-zinc-700 text-white font-bold py-3 rounded-lg shadow-lg hover:brightness-110 transition">
+                          <button onClick={() => {setEditingShowId(null); setNewVideo({episodes:[], title_en: '', title_mm: '', vipTelegramLink: '', pointsPerEp: 20});}} className="px-6 bg-zinc-700 text-white font-bold py-3 rounded-lg hover:brightness-110 transition-all shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1">
                             {t.cancelBtn}
                           </button>
                         )}
@@ -3293,11 +3293,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                            <button onClick={() => {
                              setAdminActiveTab('upload');
                              setEditingShowId(s.id); setNewVideo(s); setEpCount(s.totalEpisodes); window.scrollTo({top:0, behavior: 'smooth'});
-                           }} className="bg-blue-900/50 text-blue-300 px-3 py-1.5 rounded text-xs font-bold hover:bg-blue-900 transition flex items-center gap-1"><Edit className="w-3 h-3"/> Edit</button>
+                           }} className="bg-blue-900/50 text-blue-300 px-3 py-1.5 rounded text-xs font-bold hover:bg-blue-900 transition-all flex items-center gap-1 shadow-[0_4px_0_#1e3a8a] active:shadow-none active:translate-y-1"><Edit className="w-3 h-3"/> Edit</button>
                            <button onClick={() => setConfirmModal({
                                message: t.confirmDelDesc,
                                onConfirm: () => { setShows(shows.filter(x => x.id !== s.id)); showToast(t.msgDeleted); }
-                           })} className="bg-red-900/50 text-red-300 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-900 transition flex items-center gap-1"><Trash2 className="w-3 h-3"/> Delete</button>
+                           })} className="bg-red-900/50 text-red-300 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-900 transition-all flex items-center gap-1 shadow-[0_4px_0_#7f1d1d] active:shadow-none active:translate-y-1"><Trash2 className="w-3 h-3"/> Delete</button>
                          </div>
                       </div>
                     )) : (
@@ -3939,7 +3939,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                 </div>
              </div>
              <div className="flex gap-3 mt-6">
-               <button onClick={() => {setEditUserModal({isOpen: false, mode: 'create'}); setShowAuthPassword(false); setEditUserRemark('');}} className="flex-1 bg-zinc-800 text-white font-bold py-2.5 rounded-xl shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1 transition-all">{t.cancelBtn}</button>
+               <button onClick={() => {setEditUserModal({isOpen: false, mode: 'create'}); setShowAuthPassword(false); setEditUserRemark('');}} className="px-6 bg-zinc-700 text-white font-bold py-3 rounded-lg hover:brightness-110 transition-all shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1">{t.cancelBtn}</button>
                <button onClick={handleAdminSaveUser} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-2.5 rounded-xl shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1 transition-all">Save</button>
              </div>
           </div>
@@ -4003,7 +4003,7 @@ trackMovieView(platformSelectModal.show.id);
              </div>
              <p className="text-center text-white font-bold mb-6">{confirmModal.message || t.confirmDelTitle}</p>
              <div className="flex gap-3">
-               <button onClick={() => setConfirmModal(null)} className="flex-1 bg-zinc-800 text-white font-bold py-2.5 rounded-xl shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1 transition-all">{t.cancelBtn}</button>
+               <button onClick={() => setConfirmModal(null)} className="px-6 bg-zinc-700 text-white font-bold py-3 rounded-lg hover:brightness-110 transition-all shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1">{t.cancelBtn}</button>
                <button onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }} className="flex-1 bg-red-700 text-white font-black py-2.5 rounded-xl shadow-[0_4px_0_#7f1d1d] active:shadow-none active:translate-y-1 transition-all">Confirm</button>
              </div>
           </div>
@@ -4021,7 +4021,7 @@ trackMovieView(platformSelectModal.show.id);
                className="w-full bg-black/50 border border-zinc-700 p-3 rounded-lg text-white mb-6 focus:outline-none focus:border-[#fcd385] shadow-inner"
              />
              <div className="flex gap-3">
-               <button onClick={() => {setPromptModal(null); setPromptInputValue('');}} className="flex-1 bg-zinc-800 text-white font-bold py-2.5 rounded-xl shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1 transition-all">{t.cancelBtn}</button>
+               <button onClick={() => {setPromptModal(null); setPromptInputValue('');}} className="px-6 bg-zinc-700 text-white font-bold py-3 rounded-lg hover:brightness-110 transition-all shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1">{t.cancelBtn}</button>
                <button onClick={() => { 
                  if(promptInputValue.trim() !== '') {
                    promptModal.onSubmit(promptInputValue); setPromptModal(null); setPromptInputValue('');
@@ -4179,7 +4179,7 @@ trackMovieView(platformSelectModal.show.id);
 
             {currentUser ? (
               <div className="flex gap-3">
-                <button onClick={() => setVipModalShow(null)} className="flex-1 bg-zinc-800 text-white font-bold py-3 rounded-xl shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1 transition-all">{t.cancelBtn}</button>
+                <button onClick={() => setVipModalShow(null)} className="px-6 bg-zinc-700 text-white font-bold py-3 rounded-lg hover:brightness-110 transition-all shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1">{t.cancelBtn}</button>
                 <button onClick={() => {
                    const cost = getRequiredPoints(vipModalShow);
                    if (currentUser.points >= cost) {
