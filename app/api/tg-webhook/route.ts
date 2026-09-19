@@ -5,7 +5,7 @@ import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore/lite";
 
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
-  apiKey: "AIzaSyAPVvbhDa1xJ97b2N4Mm7it4yY1TRSKaDw",  
+  apiKey: "AIzaSyAPVvbhDa1xJ97b2N4Mm7it4yY1TRSKaDw", 
   authDomain: "jbsehunjaes-world.firebaseapp.com",
   projectId: "jbsehunjaes-world",
   storageBucket: "jbsehunjaes-world.firebasestorage.app",
@@ -27,7 +27,6 @@ export async function POST(request: Request) {
     if (body.message && body.message.chat && body.message.chat.type === 'private' && body.message.text) {
        const text = body.message.text;
 
-       // 🌟 ၁။ ရိုးရိုး /start သီးသန့် နှိပ်မိလျှင် (Bot အလုပ်လုပ်ကြောင်း အသိပေးမည်)
        if (text === '/start') {
            await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -36,14 +35,21 @@ export async function POST(request: Request) {
            return NextResponse.json({ success: true });
        }
 
-       // 🌟 ၂။ Website မှ ဝယ်ယူပြီး လာသော Payload ပါဝင်သည့် /start ဖြစ်လျှင်
        if (text.startsWith('/start ')) {
            const payload = text.split(' ')[1];
            if (payload) {
               try {
                  let b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
                  while (b64.length % 4) b64 += '=';
-                 const decodedStr = atob(b64);
+                 
+                 let decodedStr = atob(b64);
+                 
+                 // 🌟 ဤနေရာသည် အရေးအကြီးဆုံးဖြစ်သည် (Encode လုပ်ထားသည်များကို အလိုလို ဖြည်ပေးမည်)
+                 try {
+                     decodedStr = decodeURIComponent(decodedStr);
+                 } catch(err) {
+                     // Error ဖြစ်လျှင် မူလစာသားအတိုင်း ထားမည်
+                 }
                  
                  const [username, showId, epIndexStr] = decodedStr.split(':::');
                  const epIndex = parseInt(epIndexStr, 10);
@@ -60,7 +66,6 @@ export async function POST(request: Request) {
 
                          if (show && show.episodes && show.episodes[epIndex] && show.episodes[epIndex].links && show.episodes[epIndex].links.length > 0) {
                              
-                             // Telegram Link အစစ်ကို ရှာဖွေရွေးထုတ်မည်
                              const tgLinkObj = show.episodes[epIndex].links.find((l: any) => 
                                  (l.platform && l.platform.toLowerCase() === 'telegram') || 
                                  (l.url && l.url.includes('t.me'))
@@ -120,7 +125,6 @@ export async function POST(request: Request) {
                                      body: JSON.stringify({ chat_id: ADMIN_GROUP_ID, text: `✅ Delivered: [${username}] ထံသို့ [${show.title_mm || show.title_en} - ${show.episodes[epIndex].epLabel}] အား အောင်မြင်စွာ ပို့ဆောင်ပြီးပါပြီ။ (Protected)` })
                                  });
                              } else {
-                                 // 🌟 အကယ်၍ Bot က ဇာတ်ကားပို့ဖို့ ပျက်ကွက်ခဲ့လျှင် (Bot ကို Admin မပေးထားလို့ပဲဖြစ်ဖြစ်)
                                  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                                      method: 'POST', headers: { 'Content-Type': 'application/json' },
                                      body: JSON.stringify({ chat_id: body.message.chat.id, text: `❌ ချန်နယ် ချိတ်ဆက်မှု မှားယွင်းနေပါသည်။ (Bot ကို Channel တွင် Admin ပေးထားခြင်း ရှိမရှိ စစ်ဆေးပါ)\nError: ${copyData.description}` })
