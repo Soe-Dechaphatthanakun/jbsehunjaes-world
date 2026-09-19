@@ -642,16 +642,24 @@ export default function SweetieWorldApp() {
     }
   };
 
-  // NEW: Category အလိုက် ဆွဲမည့် Function (All Tab ဖြုတ်ထားပါသည်)
-  const fetchMovies = async (isLoadMore = false, cat = activeCategory) => {
+  // NEW: Search စာသားကိုပါ လက်ခံနိုင်အောင် ပြင်ဆင်ထားသည်
+  const fetchMovies = async (isLoadMore = false, cat = activeCategory, searchTxt = searchQuery) => {
     if (isLoadMore && (!lastVisible || !hasMore)) return;
     setLoadingMore(true);
     try {
         let baseQuery;
-        if (cat === 'Latest Releases') {
-            baseQuery = query(collection(db, "Shows"), orderBy("updatedAt", "desc"));
+        const safeSearch = searchTxt.toLowerCase().replace(/\s+/g, '');
+
+        if (safeSearch.length > 0) {
+            // Search Box တွင် စာရိုက်ထားလျှင် (Database ထဲမှ array-contains ဖြင့် တိုက်ရိုက်ရှာမည်)
+            baseQuery = query(collection(db, "Shows"), where("searchKeywords", "array-contains", safeSearch), orderBy("updatedAt", "desc"));
         } else {
-            baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("updatedAt", "desc"));
+            // Search မလုပ်ထားလျှင် ရိုးရိုး Category အတိုင်းပြမည်
+            if (cat === 'Latest Releases') {
+                baseQuery = query(collection(db, "Shows"), orderBy("updatedAt", "desc"));
+            } else {
+                baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("updatedAt", "desc"));
+            }
         }
 
         const finalQuery = isLoadMore 
@@ -695,12 +703,22 @@ export default function SweetieWorldApp() {
     }
   };
 
-  // Category Tab ပြောင်းတိုင်း Page 1 မှ ပြန်စပြီး Data ၃၀ အသစ်ပြန်ဆွဲရန်
+  // Category Tab ပြောင်းတိုင်း Page 1 မှ ပြန်စပြီး Data ၁၀ အသစ်ပြန်ဆွဲရန်
   useEffect(() => {
      if (isInitialLoad) return;
      setUiPage(1);
-     fetchMovies(false, activeCategory);
+     fetchMovies(false, activeCategory, '');
   }, [activeCategory]);
+
+  // NEW: Search Box တွင် စာရိုက်လိုက်ပါက (Read တွေ ထိုးမတက်အောင် 800ms စောင့်ပြီးမှ) Database သို့လှမ်းရှာမည်
+  useEffect(() => {
+     if (isInitialLoad) return;
+     const timeoutId = setTimeout(() => {
+         setUiPage(1);
+         fetchMovies(false, activeCategory, searchQuery);
+     }, 800); 
+     return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (isInitialLoad) return;
@@ -731,18 +749,35 @@ export default function SweetieWorldApp() {
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }), 2000); return () => clearTimeout(t); } }, [paymentProviders, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }), 2000); return () => clearTimeout(t); } }, [siteConfig, currentUser?.role]);
 
+  // NEW: Direct Link ဖြင့် ဝင်လာပါက လက်ရှိ ၁၀ ကားထဲမပါလျှင် Database မှ အဟောင်းကားကို တိုက်ရိုက်လှမ်းဆွဲမည့် စနစ်
   useEffect(() => {
-    if (shows.length > 0) {
+    const checkDirectLink = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const showIdFromUrl = urlParams.get('show');
-      if (showIdFromUrl) {
-        const foundShow = shows.find(s => s.id === showIdFromUrl);
-        if (foundShow) {
-          setSelectedShow(foundShow);
+      
+      // Link လည်းပါလာတယ်၊ ဇာတ်ကား Box ကလည်း မပွင့်သေးဘူးဆိုရင်
+      if (showIdFromUrl && !selectedShow && isDataFetched) {
+        
+        // ၁။ လက်ရှိ မျက်နှာပြင်မှာ ဆွဲထားတဲ့ ကားတွေထဲမှာ ပါ/မပါ အရင်ရှာမည်
+        const localShow = shows.find(s => s.id === showIdFromUrl);
+        
+        if (localShow) {
+          setSelectedShow(localShow);
+        } else {
+          // ၂။ မပါခဲ့ရင် (အဟောင်းကားဖြစ်နေရင်) Database ကနေ အဲ့ဒီ (၁) ကားတည်းကို သီးသန့် လှမ်းဆွဲမည်
+          try {
+            const docSnap = await getDoc(doc(db, "Shows", showIdFromUrl));
+            if (docSnap.exists()) {
+              setSelectedShow(docSnap.data() as VideoCardData);
+            }
+          } catch(error) {
+            console.error("Direct link fetch error:", error);
+          }
         }
       }
-    }
-  }, [shows]);
+    };
+    checkDirectLink();
+  }, [shows, isDataFetched, selectedShow]);
   // ==========================================
   // 4. ACTION HANDLERS
     const trackMovieView = (showId: string) => {
@@ -1283,14 +1318,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     return logD >= fromD.getTime() && logD <= toD.getTime();
   }) : [];
 
-  const searchSafeQuery = searchQuery.toLowerCase().replace(/\s+/g, '');
-  const filteredShows = shows.filter(s => {
-    const matchCat = activeCategory === 'All' || activeCategory === 'Latest Releases' || s.category === activeCategory;
-    const en = (s.title_en || '').toLowerCase().replace(/\s+/g, '');
-    const mm = (s.title_mm || '').toLowerCase().replace(/\s+/g, '');
-    const matchSearch = en.includes(searchSafeQuery) || mm.includes(searchSafeQuery);
-    return matchCat && matchSearch;
-  });
+  const filteredShows = shows;
 
   // 🌟 SERVER-SIDE USER SEARCH FUNCTION 🌟
   const handleSearchUser = async () => {
@@ -3157,6 +3185,24 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                       <div className="flex gap-3 mt-6">
                         <button onClick={async () => {
   if(!newVideo.title_en && !newVideo.title_mm) return;
+  
+  // NEW: Search လုပ်ရန်အတွက် နာမည်ကို အပိုင်းပိုင်းဖြတ်ပြီး Array အဖြစ် ဖန်တီးမည့် Function
+  const generateKeywords = (str1: string, str2: string) => {
+      const result = new Set<string>();
+      const addSubstrings = (s: string) => {
+          const clean = s.toLowerCase().replace(/\s+/g, '');
+          const truncated = clean.substring(0, 50); // Firebase Limit မကျော်စေရန်
+          for (let i = 0; i < truncated.length; i++) {
+              for (let j = i + 1; j <= truncated.length; j++) {
+                  result.add(truncated.substring(i, j));
+              }
+          }
+      };
+      if (str1) addSubstrings(str1);
+      if (str2) addSubstrings(str2);
+      return Array.from(result);
+  };
+
   const itemToSave = {
     id: editingShowId || `vid-${Date.now()}`,
     title_en: newVideo.title_en || '', title_mm: newVideo.title_mm || '',
@@ -3164,8 +3210,8 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     category: newVideo.category || categories[0], description: newVideo.description || '',
     totalEpisodes: newVideo.totalEpisodes ?? 0, episodes: newVideo.episodes || [],
     vipTelegramLink: newVideo.vipTelegramLink || '', seriesType: newVideo.seriesType || 'long', pointsPerEp: newVideo.pointsPerEp ?? 20,
-    // 👇 ဒီစာကြောင်းလေးကို အသစ်ပေါင်းထည့်ပေးပါ
-    updatedAt: new Date().toISOString() 
+    updatedAt: new Date().toISOString(),
+    searchKeywords: generateKeywords(newVideo.title_en || '', newVideo.title_mm || '') // 👈 အသစ်ပေါင်းထည့်ထားပါသည်
   };
 
   isSyncing.current = true; 
