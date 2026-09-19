@@ -5,7 +5,7 @@ import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore/lite";
 
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
-  apiKey: "AIzaSyAPVvbhDa1xJ97b2N4Mm7it4yY1TRSKaDw",
+  apiKey: "AIzaSyAPVvbhDa1xJ97b2N4Mm7it4yY1TRSKaDw", 
   authDomain: "jbsehunjaes-world.firebaseapp.com",
   projectId: "jbsehunjaes-world",
   storageBucket: "jbsehunjaes-world.firebasestorage.app",
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     const BOT_TOKEN = "8962875521:AAHhx5Bo6Fa73QgEiYWWZYzKmoGWkHbe2K4"; 
-    const ADMIN_GROUP_ID = "-1003824552410"; 
+    const ADMIN_GROUP_ID = "-1003824552410"; // အစ်ကို့ရဲ့ Admin Group ID
 
     // 🌟 BOT DM (Start Command) ဖြင့် ဝင်လာသော User များအား Protect Content ဖြင့် ဗီဒီယိုပို့ပေးခြင်း
     if (body.message && body.message.chat && body.message.chat.type === 'private' && body.message.text && body.message.text.startsWith('/start ')) {
@@ -48,8 +48,11 @@ export async function POST(request: Request) {
 
                      if (show && show.episodes && show.episodes[epIndex] && show.episodes[epIndex].links && show.episodes[epIndex].links.length > 0) {
                          
-                         // ၁။ Telegram Link အစစ်ကိုသာ ရှာဖွေရွေးထုတ်မည် (Index 0 ကို အသေမယူတော့ပါ)
-                         const tgLinkObj = show.episodes[epIndex].links.find((l: any) => l.platform.toLowerCase() === 'telegram' || l.url.includes('t.me'));
+                         // ၁။ Telegram Link အစစ်ကိုသာ ရှာဖွေရွေးထုတ်မည် (Platform အမည်မပါရင်တောင် t.me ပါရင် ရွေးထုတ်ပေးမည်)
+                         const tgLinkObj = show.episodes[epIndex].links.find((l: any) => 
+                             (l.platform && l.platform.toLowerCase() === 'telegram') || 
+                             (l.url && l.url.includes('t.me'))
+                         );
                          
                          if (!tgLinkObj || !tgLinkObj.url) {
                              await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
@@ -82,7 +85,7 @@ export async function POST(request: Request) {
                          } catch (err) {
                              await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ Admin ထည့်ထားသော Link ပုံစံမှားယွင်းနေပါသည်။" })
+                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ Admin ထည့်ထားသော Link ပုံစံမှားယွင်းနေပါသည်။ (" + tgUrl + ")" })
                              });
                              return NextResponse.json({ success: true });
                          }
@@ -105,11 +108,18 @@ export async function POST(request: Request) {
                                  body: JSON.stringify({ chat_id: ADMIN_GROUP_ID, text: `✅ Delivered: [${username}] ထံသို့ [${show.title_mm || show.title_en} - ${show.episodes[epIndex].epLabel}] အား အောင်မြင်စွာ ပို့ဆောင်ပြီးပါပြီ။ (Protected)` })
                              });
                          } else {
+                             // 🌟 အကယ်၍ Bot က ဇာတ်ကားပို့ဖို့ ပျက်ကွက်ခဲ့လျှင် (Bot ကို Admin မပေးထားလို့ပဲဖြစ်ဖြစ်)
                              await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "Admin ဖက်မှ လမ်းကြောင်း ချိတ်ဆက်မှု မှားယွင်းနေပါသည်။" })
+                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ Admin ၏ ချန်နယ် ချိတ်ဆက်မှု မှားယွင်းနေပါသည်။ (Bot အား Channel တွင် Admin ပေးထားခြင်း ရှိမရှိ စစ်ဆေးပါ)" })
                              });
                          }
+                     } else {
+                         // 🌟 ဇာတ်ကား (သို့) အပိုင်း ရှာမတွေ့လျှင် Silent မဖြစ်စေဘဲ စာပို့ပေးမည်
+                         await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                             method: 'POST', headers: { 'Content-Type': 'application/json' },
+                             body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ ဇာတ်ကားအချက်အလက် မပြည့်စုံပါ။ Admin သို့ဆက်သွယ်ပါ။" })
+                         });
                      }
                  } else {
                      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
@@ -123,8 +133,13 @@ export async function POST(request: Request) {
                      body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ သင့်အကောင့်ကို ရှာမတွေ့ပါ။ Website တွင် Login အရင်ဝင်ပါ။" })
                  });
              }
-          } catch (e) {
+          } catch (e: any) {
              console.error("DM Error", e);
+             // 🌟 အခြားသော Unexpected Error တစ်ခုခုတက်လျှင်လည်း ရပ်မသွားစေဘဲ အကြောင်းကြားပေးမည်
+             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                 method: 'POST', headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ စနစ်ချို့ယွင်းမှုဖြစ်ပွားနေပါသည်။" })
+             });
           }
        }
        return NextResponse.json({ success: true });
