@@ -44,9 +44,9 @@ export async function POST(request: Request) {
                  
                  let decodedStr = atob(b64);
                  
-                 // 🌟 ဤနေရာသည် အရေးအကြီးဆုံးဖြစ်သည် (Encode လုပ်ထားသည်များကို အလိုလို ဖြည်ပေးမည်)
+                 // 🌟 စာလုံးအပွားများကို မူလအတိုင်း ပြန်လည်ဖြည်ထုတ်ပေးခြင်း
                  try {
-                     decodedStr = decodeURIComponent(decodedStr);
+                     decodedStr = decodeURIComponent(escape(decodedStr));
                  } catch(err) {
                      // Error ဖြစ်လျှင် မူလစာသားအတိုင်း ထားမည်
                  }

@@ -3539,7 +3539,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                 if (isVipOnly && !isLongSeries && isVipUnlocked) {
                                   // Bot ဆီသို့ DM သွားမည့် လမ်းကြောင်း (Database သစ်အတွက် Username ကိုပါ တွဲပို့မည်)
                               	  const payloadStr = `${currentUser.username}:::${selectedShow.id}:::${idx}`;
-const base64Url = btoa(encodeURIComponent(payloadStr)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const base64Url = btoa(unescape(encodeURIComponent(payloadStr))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
                                   const botUsername = "Jbsehunjae_vip_bot"; // ⚠️ သင်၏ Telegram Bot Username ကို ဤနေရာတွင် ထည့်ပါ
                                   window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
                                   trackMovieView(selectedShow.id);
@@ -4286,7 +4286,7 @@ setCurrentUser(updatedUser);
                       showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
 
                       const payloadStr = `${currentUser.username}:::${miniVipModalShow.show.id}:::${miniVipModalShow.epIndex}`;
-const base64Url = btoa(encodeURIComponent(payloadStr)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const base64Url = btoa(unescape(encodeURIComponent(payloadStr))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
                       const botUsername = "Jbsehunjae_vip_bot"; // ⚠️ သင်၏ Telegram Bot Username
                       window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
                    } else {
