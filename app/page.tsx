@@ -1795,26 +1795,40 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
              <div className="p-5 border-b border-[#4a2626] bg-[#2a1414]">
                 <h2 className="text-[#ff9d9d] font-black text-lg flex items-center gap-2 mb-4"><LayoutDashboard className="w-5 h-5"/> {t.adminSystem}</h2>
              </div>
-             <nav className="flex-1 py-4 flex flex-col gap-1 font-sans">
-                <button onClick={() => {syncLatestData(); setAdminActiveTab('dashboard')}} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'dashboard' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}>
+             {/* Admin Sidebar Menu (3D Interactive Design) */}
+             <nav className="flex-1 py-4 px-4 flex flex-col gap-3 font-sans overflow-y-auto custom-scrollbar">
+                <button onClick={() => {syncLatestData(); setAdminActiveTab('dashboard')}} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'dashboard' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
                   <LayoutDashboard className="w-5 h-5"/> {t.adminTabDashboard}
                 </button>
-                <button onClick={() => {syncLatestData(); setAdminActiveTab('users')}} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'users' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}><Users className="w-5 h-5"/> {t.adminTabUsers}</button>
-                <button onClick={() => {syncLatestData(); setAdminActiveTab('points')}} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'points' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}>
+                <button onClick={() => {syncLatestData(); setAdminActiveTab('users')}} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'users' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                  <Users className="w-5 h-5"/> {t.adminTabUsers}
+                </button>
+                <button onClick={() => {syncLatestData(); setAdminActiveTab('points')}} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'points' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
                   <div className="relative"><Bell className="w-5 h-5"/>{adminPendingPoints.length > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"/>}</div> 
                   {t.adminTabPoints}
                 </button>
-                <button onClick={() => {syncLatestData(); setAdminActiveTab('history')}} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'history' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}><Clock className="w-5 h-5"/> {t.adminTabHistory}</button>
-                
-                <button onClick={() => {syncLatestData(); setAdminActiveTab('logs')}} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'logs' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}><Edit className="w-5 h-5"/> {t.adminTabLogs}</button>
-
-                <button onClick={() => setAdminActiveTab('settings')} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'settings' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}><Settings className="w-5 h-5"/> {t.adminTabSettings}</button>
-                <button onClick={() => setAdminActiveTab('promo')} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'promo' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}><Gift className="w-5 h-5"/> {t.adminTabPromo}</button>
-                <button onClick={() => setAdminActiveTab('faq')} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'faq' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}><HelpCircle className="w-5 h-5"/> {t.adminTabFaq}</button>
-                <button onClick={() => setAdminActiveTab('upload')} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'upload' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}><Upload className="w-5 h-5"/> {t.adminTabUpload}</button>
-                {/* NEW MENU ITEM */}
-                <button onClick={() => {syncLatestData(); setAdminActiveTab('uploaded_content');}} className={`w-full text-left px-6 py-3 flex items-center gap-3 text-sm font-bold transition ${adminActiveTab === 'uploaded_content' ? 'text-[#ff9d9d] bg-black/20 border-r-4 border-[#ff9d9d]' : 'text-zinc-300 hover:bg-black/10'}`}><ListVideo className="w-5 h-5"/> {lang === 'en' ? 'Uploaded Content' : 'တင်ထားသော ဇာတ်ကားများ'}</button>
-              </nav>
+                <button onClick={() => {syncLatestData(); setAdminActiveTab('history')}} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'history' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                  <Clock className="w-5 h-5"/> {t.adminTabHistory}
+                </button>
+                <button onClick={() => {syncLatestData(); setAdminActiveTab('logs')}} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'logs' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                  <Edit className="w-5 h-5"/> {t.adminTabLogs}
+                </button>
+                <button onClick={() => setAdminActiveTab('settings')} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'settings' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                  <Settings className="w-5 h-5"/> {t.adminTabSettings}
+                </button>
+                <button onClick={() => setAdminActiveTab('promo')} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'promo' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                  <Gift className="w-5 h-5"/> {t.adminTabPromo}
+                </button>
+                <button onClick={() => setAdminActiveTab('faq')} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'faq' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                  <HelpCircle className="w-5 h-5"/> {t.adminTabFaq}
+                </button>
+                <button onClick={() => setAdminActiveTab('upload')} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'upload' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                  <Upload className="w-5 h-5"/> {t.adminTabUpload}
+                </button>
+                <button onClick={() => {syncLatestData(); setAdminActiveTab('uploaded_content');}} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'uploaded_content' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                  <ListVideo className="w-5 h-5"/> {lang === 'en' ? 'Uploaded Content' : 'တင်ထားသော ဇာတ်ကားများ'}
+                </button>
+             </nav>
           </aside>
 
           <main className="flex-1 p-4 md:p-8 bg-[#111111]">
