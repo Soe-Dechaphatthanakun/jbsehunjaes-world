@@ -47,18 +47,44 @@ export async function POST(request: Request) {
                      const show = showSnap.exists() ? (showSnap.data() as any) : null;
 
                      if (show && show.episodes && show.episodes[epIndex] && show.episodes[epIndex].links && show.episodes[epIndex].links.length > 0) {
-                         const tgUrl = show.episodes[epIndex].links[0].url; 
-                         let fromChatId = '';
-                         let messageId = '';
+                         
+                         // ၁။ Telegram Link အစစ်ကိုသာ ရှာဖွေရွေးထုတ်မည် (Index 0 ကို အသေမယူတော့ပါ)
+                         const tgLinkObj = show.episodes[epIndex].links.find((l: any) => l.platform.toLowerCase() === 'telegram' || l.url.includes('t.me'));
+                         
+                         if (!tgLinkObj || !tgLinkObj.url) {
+                             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ ဤအပိုင်းအတွက် Telegram Link မရှိပါ။ Admin သို့ဆက်သွယ်ပါ။" })
+                             });
+                             return NextResponse.json({ success: true });
+                         }
 
-                         if (tgUrl.includes('/c/')) {
-                             const parts = tgUrl.split('/c/')[1].split('/');
-                             fromChatId = '-100' + parts[0];
-                             messageId = parts[1];
-                         } else {
-                             const parts = tgUrl.replace('https://t.me/', '').split('/');
-                             fromChatId = '@' + parts[0];
-                             messageId = parts[1];
+                         const tgUrl = tgLinkObj.url; 
+                         let fromChatId = '';
+                         let messageId: number = 0;
+
+                         try {
+                             // ၂။ Query Parameters (?single စသည်) များကို ဖြတ်ထုတ်ရန် URL ကို စနစ်တကျ ခွဲခြမ်းမည်
+                             const urlObj = new URL(tgUrl);
+                             const pathParts = urlObj.pathname.split('/').filter(Boolean);
+                             
+                             if (pathParts[0] === 'c') {
+                                 fromChatId = '-100' + pathParts[1];
+                             } else {
+                                 fromChatId = '@' + pathParts[0];
+                             }
+                             
+                             // ၃။ Topic Link များပါလာပါက အမြဲတမ်း နောက်ဆုံးဂဏန်းကိုသာ Message ID အဖြစ် ယူမည်
+                             messageId = parseInt(pathParts[pathParts.length - 1], 10);
+                             
+                             if (isNaN(messageId)) throw new Error("Invalid Message ID");
+                             
+                         } catch (err) {
+                             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ Admin ထည့်ထားသော Link ပုံစံမှားယွင်းနေပါသည်။" })
+                             });
+                             return NextResponse.json({ success: true });
                          }
 
                          const copyRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/copyMessage`, {
