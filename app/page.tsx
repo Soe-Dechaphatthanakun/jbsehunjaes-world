@@ -147,7 +147,7 @@ const TRANSLATIONS = {
     latestReleases: "နောက်ဆုံးတင်ထားသော ဇာတ်ကားများ", collection: "ဇာတ်ကားများ", episodes: "အပိုင်းများ", searchPlaceholder: "ဇာတ်ကားအမည် ရှာရန်...",
     home: "ပင်မစာမျက်နှာ", promotions: "ပရိုမိုးရှင်းများ", faq: "Point ဝယ်နည်း နှင့် အမေးအဖြေ", email: "အီးမေးလ် (သို့) Username", password: "စကားဝှက်", 
     forgotPwd: "စကားဝှက်မေ့နေပါသလား?", noAccount: "အကောင့်မရှိသေးဘူးလား?", hasAccount: "အကောင့်ရှိပြီးသားလား?", backTo: "နောက်သို့", 
-    getpwd: "စကားဝှက်တောင်းမည်", buyPoints: "Point ဝယ်ယူရန်", watchBtn: "ဇာတ်ကားကြည့်ရန်နှိပ်ပါ", waitBtn: "အချိန်စောင့်ပါ (သို့) VIP ဝင်ပါ",
+    getpwd: "စကားဝှက်တောင်းမည်", buyPoints: "Point ဝယ်ယူရန်", watchBtn: "ဇာတ်ကားကြည့်ရန်နှိပ်ပါ", waitBtn: "အချိန်စောင့်ပါ",
     vipTitle: "VIP အဖွဲ့ဝင်", vipDesc: "Schedule မစောင့်ချင်ပါက VIP Member ဝင်ပြီး အပိုင်းအားလုံး ကြည့်ရှုနိုင်ပါသည်။", joinVip: "VIP ဝင်မည်",
     vipUnlockedTitle: "VIP ဝင်ပြီးပါပြီ", vipUnlockedDesc: "ဒီဇာတ်ကားအတွက် VIP အပြည့်အစုံ ဝင်ရောက်ထားပြီး ဖြစ်ပါသည်။",
     vipNotRequired: "VIP ဝင်ရန်မလိုအပ်ပါ", allEpsAvailable: "အပိုင်းအားလုံးကို အခမဲ့ကြည့်ရှုနိုင်ပြီဖြစ်ပါသည်။",
