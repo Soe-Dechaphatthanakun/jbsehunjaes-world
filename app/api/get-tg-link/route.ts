@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
     // သင့်ရဲ့ Telegram Bot Token ကို အောက်ပါစာကြောင်းတွင် အစားထိုးထည့်ပါ
     // ဥပမာ - const BOT_TOKEN = "123456789:ABCDefghIJKlmnOPQRstUVwxyz";
-    const BOT_TOKEN = "8962875521:AAHhx5Bo6Fa73QgEiYWWZYzKmoGWkHbe2K4"; 
+    const BOT_TOKEN = "8962875521:AAE3A3aEx652OFr0G97GWTAAImb19Eyb9-Y"; 
 
     // Telegram API ကို လှမ်းခေါ်ခြင်း (member_limit=1 ပါဝင်သည်)
     const telegramApiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/createChatInviteLink`;
