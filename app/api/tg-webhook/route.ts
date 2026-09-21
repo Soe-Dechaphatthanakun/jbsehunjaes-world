@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const BOT_TOKEN = "8962875521:AAHhx5Bo6Fa73QgEiYWWZYzKmoGWkHbe2K4"; // ⚠️ အစ်ကို့ Bot Token အစစ်ပြန်ထည့်ပါ
+    const BOT_TOKEN = "8962875521:AAE3A3aEx652OFr0G97GWTAAImb19Eyb9-Y"; // ⚠️ အစ်ကို့ Bot Token အစစ်ပြန်ထည့်ပါ
     const ADMIN_GROUP_ID = "-1003824552410"; // ⚠️ အစ်ကို့ Admin Group ID အစစ်ပြန်ထည့်ပါ
 
     // 🌟 BOT DM (Start Command) ဖြင့် ဝင်လာသော User များအား Protect Content ဖြင့် ဗီဒီယိုပို့ပေးခြင်း
