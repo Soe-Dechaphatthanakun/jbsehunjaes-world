@@ -1,7 +1,8 @@
 export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore/lite";
+// ✅ ဒီနေရာမှာ import က (၁) ကြောင်းတည်းပဲ ရှိရပါမယ်
+import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore/lite";
 
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
@@ -39,10 +40,11 @@ export async function POST(request: Request) {
            const payload = text.split(' ')[1];
            if (payload) {
               try {
-                 // 🌟 Ticket Token ဖြင့် Database တွင် ပြန်လည်ရှာဖွေခြင်း
-                 const tokenSnap = await getDoc(doc(db, "TgTokens", payload));
+                 // 🌟 User Data ထဲမှာ တွဲမှတ်ထားတဲ့ Token မှန်/မမှန် သွားစစ်မယ်
+                 const q = query(collection(db, "Users"), where("tgToken", "==", payload));
+                 const snap = await getDocs(q);
                  
-                 if (!tokenSnap.exists()) {
+                 if (snap.empty) {
                      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                          method: 'POST', headers: { 'Content-Type': 'application/json' },
                          body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ လင့်ခ် သက်တမ်းကုန်သွားပါပြီ (သို့) မှားယွင်းနေပါသည်။ Website မှနေ၍ ဇာတ်ကားကို ပြန်လည်နှိပ်ပေးပါ။" })
@@ -50,109 +52,96 @@ export async function POST(request: Request) {
                      return NextResponse.json({ success: true });
                  }
 
-                 const tokenData = tokenSnap.data();
-                 const username = tokenData.u;
-                 const showId = tokenData.s;
-                 const epIndex = parseInt(tokenData.e, 10);
-
-                 const userSnap = await getDoc(doc(db, "Users", username));
+                 // Data တွေ့ရင် User ရဲ့ အချက်အလက်တွေကို ဆွဲထုတ်မယ်
+                 const user = snap.docs[0].data();
+                 const username = snap.docs[0].id;
+                 const showId = user.tgShow;
+                 const epIndex = parseInt(user.tgEp, 10);
                  
-                 if (userSnap.exists()) {
-                     const user = userSnap.data();
+                 // အပိုင်း ဝယ်ထားခြင်း ရှိ/မရှိ စစ်ဆေးပြီး Telegram ကနေ ဇာတ်ကားပို့မယ်
+                 if (user.unlockedEpisodes && user.unlockedEpisodes.includes(`${showId}_${epIndex}`)) {
+                     const showSnap = await getDoc(doc(db, "Shows", showId));
+                     const show = showSnap.exists() ? (showSnap.data() as any) : null;
 
-                     if (user.unlockedEpisodes && user.unlockedEpisodes.includes(`${showId}_${epIndex}`)) {
+                     if (show && show.episodes && show.episodes[epIndex] && show.episodes[epIndex].links && show.episodes[epIndex].links.length > 0) {
+                         const tgLinkObj = show.episodes[epIndex].links.find((l: any) => 
+                             (l.platform && l.platform.toLowerCase() === 'telegram') || 
+                             (l.url && l.url.includes('t.me'))
+                         );
                          
-                         const showSnap = await getDoc(doc(db, "Shows", showId));
-                         const show = showSnap.exists() ? (showSnap.data() as any) : null;
-
-                         if (show && show.episodes && show.episodes[epIndex] && show.episodes[epIndex].links && show.episodes[epIndex].links.length > 0) {
-                             
-                             const tgLinkObj = show.episodes[epIndex].links.find((l: any) => 
-                                 (l.platform && l.platform.toLowerCase() === 'telegram') || 
-                                 (l.url && l.url.includes('t.me'))
-                             );
-                             
-                             if (!tgLinkObj || !tgLinkObj.url) {
-                                 await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                     body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ ဤအပိုင်းအတွက် Telegram Link မရှိပါ။ Admin သို့ဆက်သွယ်ပါ။" })
-                                 });
-                                 return NextResponse.json({ success: true });
-                             }
-
-                             let tgUrl = tgLinkObj.url; 
-                             if (!tgUrl.startsWith('http')) {
-                                 tgUrl = 'https://' + tgUrl;
-                             }
-
-                             let fromChatId = '';
-                             let messageId: number = 0;
-
-                             try {
-                                 const urlObj = new URL(tgUrl);
-                                 const pathParts = urlObj.pathname.split('/').filter(Boolean);
-                                 
-                                 if (pathParts[0] === 'c') {
-                                     fromChatId = '-100' + pathParts[1];
-                                 } else {
-                                     fromChatId = '@' + pathParts[0];
-                                 }
-                                 messageId = parseInt(pathParts[pathParts.length - 1], 10);
-                                 if (isNaN(messageId)) throw new Error("Invalid Message ID");
-                                 
-                             } catch (err) {
-                                 await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                     body: JSON.stringify({ chat_id: body.message.chat.id, text: `❌ လင့်ခ် ပုံစံမှားယွင်းနေပါသည်။\n(URL: ${tgUrl})` })
-                                 });
-                                 return NextResponse.json({ success: true });
-                             }
-
-                             const copyRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/copyMessage`, {
-                                 method: 'POST',
-                                 headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({
-                                     chat_id: body.message.chat.id,
-                                     from_chat_id: fromChatId,
-                                     message_id: messageId,
-                                     protect_content: true 
-                                 })
+                         if (!tgLinkObj || !tgLinkObj.url) {
+                             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ ဤအပိုင်းအတွက် Telegram Link မရှိပါ။ Admin သို့ဆက်သွယ်ပါ။" })
                              });
+                             return NextResponse.json({ success: true });
+                         }
 
-                             const copyData = await copyRes.json();
-                             if (copyData.ok) {
-                                 await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                     body: JSON.stringify({ chat_id: ADMIN_GROUP_ID, text: `✅ Delivered: [${username}] ထံသို့ [${show.title_mm || show.title_en} - ${show.episodes[epIndex].epLabel}] အား အောင်မြင်စွာ ပို့ဆောင်ပြီးပါပြီ။ (Protected)` })
-                                 });
+                         let tgUrl = tgLinkObj.url; 
+                         if (!tgUrl.startsWith('http')) { tgUrl = 'https://' + tgUrl; }
+
+                         let fromChatId = '';
+                         let messageId: number = 0;
+
+                         try {
+                             const urlObj = new URL(tgUrl);
+                             const pathParts = urlObj.pathname.split('/').filter(Boolean);
+                             
+                             if (pathParts[0] === 'c') {
+                                 fromChatId = '-100' + pathParts[1];
                              } else {
-                                 await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                     body: JSON.stringify({ chat_id: body.message.chat.id, text: `❌ ချန်နယ် ချိတ်ဆက်မှု မှားယွင်းနေပါသည်။ (Bot ကို Channel တွင် Admin ပေးထားခြင်း ရှိမရှိ စစ်ဆေးပါ)\nError: ${copyData.description}` })
-                                 });
+                                 fromChatId = '@' + pathParts[0];
                              }
+                             messageId = parseInt(pathParts[pathParts.length - 1], 10);
+                             if (isNaN(messageId)) throw new Error("Invalid Message ID");
+                             
+                         } catch (err) {
+                             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: `❌ လင့်ခ် ပုံစံမှားယွင်းနေပါသည်။\n(URL: ${tgUrl})` })
+                             });
+                             return NextResponse.json({ success: true });
+                         }
+
+                         const copyRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/copyMessage`, {
+                             method: 'POST',
+                             headers: { 'Content-Type': 'application/json' },
+                             body: JSON.stringify({
+                                 chat_id: body.message.chat.id,
+                                 from_chat_id: fromChatId,
+                                 message_id: messageId,
+                                 protect_content: true 
+                             })
+                         });
+
+                         const copyData = await copyRes.json();
+                         if (copyData.ok) {
+                             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                                 method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ chat_id: ADMIN_GROUP_ID, text: `✅ Delivered: [${username}] ထံသို့ [${show.title_mm || show.title_en} - ${show.episodes[epIndex].epLabel}] အား အောင်မြင်စွာ ပို့ဆောင်ပြီးပါပြီ။ (Protected)` })
+                             });
                          } else {
                              await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ ဇာတ်ကားအချက်အလက် မပြည့်စုံပါ။ (Link မရှိပါ)" })
+                                 body: JSON.stringify({ chat_id: body.message.chat.id, text: `❌ ချန်နယ် ချိတ်ဆက်မှု မှားယွင်းနေပါသည်။ (Bot ကို Channel တွင် Admin ပေးထားခြင်း ရှိမရှိ စစ်ဆေးပါ)\nError: ${copyData.description}` })
                              });
                          }
                      } else {
                          await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                              method: 'POST', headers: { 'Content-Type': 'application/json' },
-                             body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ သင်သည် ဤအပိုင်းအား ဝယ်ယူထားခြင်း မရှိသေးပါ။" })
+                             body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ ဇာတ်ကားအချက်အလက် မပြည့်စုံပါ။ (Link မရှိပါ)" })
                          });
                      }
                  } else {
                      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                          method: 'POST', headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ သင့်အကောင့်ကို ရှာမတွေ့ပါ။ Website တွင် Login အရင်ဝင်ပါ။" })
+                         body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ သင်သည် ဤအပိုင်းအား ဝယ်ယူထားခြင်း မရှိသေးပါ။" })
                      });
                  }
               } catch (e: any) {
                  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                      method: 'POST', headers: { 'Content-Type': 'application/json' },
-                     body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ စနစ်ချို့ယွင်းမှုဖြစ်ပွားနေပါသည်။ (Decode Error)" })
+                     body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ စနစ်ချို့ယွင်းမှုဖြစ်ပွားနေပါသည်။ (Database Error)" })
                  });
               }
            }

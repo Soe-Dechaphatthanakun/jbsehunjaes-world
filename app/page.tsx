@@ -3539,11 +3539,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                 if (isVipOnly && !isLongSeries && isVipUnlocked) {
                                   // Bot ဆီသို့ DM သွားမည့် လမ်းကြောင်း (Database သစ်အတွက် Username ကိုပါ တွဲပို့မည်)
                               	  const token = Math.random().toString(36).substring(2, 12);
-await setDoc(doc(db, "TgTokens", token), { 
-    u: currentUser.username, 
-    s: selectedShow.id, 
-    e: idx, 
-    t: Date.now() 
+await setDoc(doc(db, "Users", currentUser.username), { 
+    ...currentUser, 
+    tgToken: token, 
+    tgShow: selectedShow.id, 
+    tgEp: idx 
 });
 const botUsername = "Jbsehunjae_vip_bot";
 window.open(`https://t.me/${botUsername}?start=${token}`, '_blank');
@@ -4291,11 +4291,11 @@ setCurrentUser(updatedUser);
                       showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
 
                       const token = Math.random().toString(36).substring(2, 12);
-await setDoc(doc(db, "TgTokens", token), { 
-    u: currentUser.username, 
-    s: miniVipModalShow.show.id, 
-    e: miniVipModalShow.epIndex, 
-    t: Date.now() 
+await setDoc(doc(db, "Users", currentUser.username), { 
+    ...updatedUser, 
+    tgToken: token, 
+    tgShow: miniVipModalShow.show.id, 
+    tgEp: miniVipModalShow.epIndex 
 });
 const botUsername = "Jbsehunjae_vip_bot";
 window.open(`https://t.me/${botUsername}?start=${token}`, '_blank');
