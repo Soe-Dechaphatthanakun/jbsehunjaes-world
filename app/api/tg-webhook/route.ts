@@ -39,20 +39,21 @@ export async function POST(request: Request) {
            const payload = text.split(' ')[1];
            if (payload) {
               try {
-                 let b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-                 while (b64.length % 4) b64 += '=';
+                 // 🌟 Ticket Token ဖြင့် Database တွင် ပြန်လည်ရှာဖွေခြင်း
+                 const tokenSnap = await getDoc(doc(db, "TgTokens", payload));
                  
-                 let decodedStr = atob(b64);
-                 
-                 // 🌟 စာလုံးအပွားများကို မူလအတိုင်း ပြန်လည်ဖြည်ထုတ်ပေးခြင်း
-                 try {
-                     decodedStr = decodeURIComponent(escape(decodedStr));
-                 } catch(err) {
-                     // Error ဖြစ်လျှင် မူလစာသားအတိုင်း ထားမည်
+                 if (!tokenSnap.exists()) {
+                     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                         method: 'POST', headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify({ chat_id: body.message.chat.id, text: "❌ လင့်ခ် သက်တမ်းကုန်သွားပါပြီ (သို့) မှားယွင်းနေပါသည်။ Website မှနေ၍ ဇာတ်ကားကို ပြန်လည်နှိပ်ပေးပါ။" })
+                     });
+                     return NextResponse.json({ success: true });
                  }
-                 
-                 const [username, showId, epIndexStr] = decodedStr.split(':::');
-                 const epIndex = parseInt(epIndexStr, 10);
+
+                 const tokenData = tokenSnap.data();
+                 const username = tokenData.u;
+                 const showId = tokenData.s;
+                 const epIndex = parseInt(tokenData.e, 10);
 
                  const userSnap = await getDoc(doc(db, "Users", username));
                  

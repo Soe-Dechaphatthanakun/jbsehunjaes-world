@@ -3526,8 +3526,8 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 
                       return (
                         <div key={idx} className="flex flex-col gap-1">
-                          <button onClick={() => {
-                             if (!currentUser) { setAuthMode('login'); setAuthModalOpen(true); return; }
+                          <button onClick={async () => {
+    if (!currentUser) { setAuthMode('login'); setAuthModalOpen(true); return; }
 
                              if (isVipOnly && !isVipUnlocked) {
                                 if (isLongSeries) setVipModalShow(selectedShow);
@@ -3538,10 +3538,15 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                              if(isReleased) {
                                 if (isVipOnly && !isLongSeries && isVipUnlocked) {
                                   // Bot ဆီသို့ DM သွားမည့် လမ်းကြောင်း (Database သစ်အတွက် Username ကိုပါ တွဲပို့မည်)
-                              	  const payloadStr = `${currentUser.username}:::${selectedShow.id}:::${idx}`;
-const base64Url = btoa(unescape(encodeURIComponent(payloadStr))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-                                  const botUsername = "Jbsehunjae_vip_bot"; // ⚠️ သင်၏ Telegram Bot Username ကို ဤနေရာတွင် ထည့်ပါ
-                                  window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
+                              	  const token = Math.random().toString(36).substring(2, 12);
+await setDoc(doc(db, "TgTokens", token), { 
+    u: currentUser.username, 
+    s: selectedShow.id, 
+    e: idx, 
+    t: Date.now() 
+});
+const botUsername = "Jbsehunjae_vip_bot";
+window.open(`https://t.me/${botUsername}?start=${token}`, '_blank');
                                   trackMovieView(selectedShow.id);
                                 } else if (ep.links && ep.links.length === 1) {
                                   window.open(ep.links[0].url, '_blank');
@@ -4267,9 +4272,9 @@ setCurrentUser(updatedUser);
             {currentUser ? (
               <div className="flex gap-3">
                 <button onClick={() => setMiniVipModalShow(null)} className="flex-1 bg-zinc-800 text-white font-bold py-3 rounded-xl transition-all">{t.cancelBtn}</button>
-                <button onClick={() => {
-                   const cost = miniVipModalShow.show.pointsPerEp;
-                   if (currentUser.points >= cost) {
+               <button onClick={async () => {
+   const cost = miniVipModalShow.show.pointsPerEp;
+   if (currentUser.points >= cost) {
                       const newLog: UserHistoryLog = { id: Date.now().toString(), type: 'buy_ep', title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`, amount: -cost, date: new Date().toISOString() };
                       const updatedUser = {
                          ...currentUser, points: currentUser.points - cost,
@@ -4285,10 +4290,15 @@ setCurrentUser(updatedUser);
                       
                       showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
 
-                      const payloadStr = `${currentUser.username}:::${miniVipModalShow.show.id}:::${miniVipModalShow.epIndex}`;
-const base64Url = btoa(unescape(encodeURIComponent(payloadStr))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-                      const botUsername = "Jbsehunjae_vip_bot"; // ⚠️ သင်၏ Telegram Bot Username
-                      window.open(`https://t.me/${botUsername}?start=${base64Url}`, '_blank');
+                      const token = Math.random().toString(36).substring(2, 12);
+await setDoc(doc(db, "TgTokens", token), { 
+    u: currentUser.username, 
+    s: miniVipModalShow.show.id, 
+    e: miniVipModalShow.epIndex, 
+    t: Date.now() 
+});
+const botUsername = "Jbsehunjae_vip_bot";
+window.open(`https://t.me/${botUsername}?start=${token}`, '_blank');
                    } else {
                       setMiniVipModalShow(null);
                       setAlertModal({ message: `${t.msgNotEnough}${cost} PTS`, actionText: lang === 'en' ? 'Click to Buy Points' : 'Point ဝယ်ရန်နှိပ်ပါ', onAction: () => { setAlertModal(null); setPayStep('providers'); setPointModalOpen(true); } });
