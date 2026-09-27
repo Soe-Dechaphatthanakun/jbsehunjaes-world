@@ -3546,7 +3546,7 @@ await setDoc(doc(db, "Users", currentUser.username), {
     tgEp: idx 
 });
 const botUsername = "Jbsehunjae_vip_bot";
-window.open(`https://t.me/${botUsername}?start=${token}`, '_blank');
+window.location.href = `https://t.me/${botUsername}?start=${token}`;
                                   trackMovieView(selectedShow.id);
                                 } else if (ep.links && ep.links.length === 1) {
                                   window.open(ep.links[0].url, '_blank');
@@ -4298,7 +4298,7 @@ await setDoc(doc(db, "Users", currentUser.username), {
     tgEp: miniVipModalShow.epIndex 
 });
 const botUsername = "Jbsehunjae_vip_bot";
-window.open(`https://t.me/${botUsername}?start=${token}`, '_blank');
+window.location.href = `https://t.me/${botUsername}?start=${token}`;
                    } else {
                       setMiniVipModalShow(null);
                       setAlertModal({ message: `${t.msgNotEnough}${cost} PTS`, actionText: lang === 'en' ? 'Click to Buy Points' : 'Point ဝယ်ရန်နှိပ်ပါ', onAction: () => { setAlertModal(null); setPayStep('providers'); setPointModalOpen(true); } });
