@@ -462,7 +462,7 @@ export default function SweetieWorldApp() {
 
         const fetchShows = async () => {
             const showsCol = collection(db, "Shows");
-            const q = query(showsCol, orderBy("updatedAt", "desc"), limit(10));
+            const q = query(showsCol, limit(50));
             const showsSnap = await getDocs(q);
 
             if (!showsSnap.empty) {
