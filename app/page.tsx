@@ -462,7 +462,7 @@ export default function SweetieWorldApp() {
 
         const fetchShows = async () => {
             const showsCol = collection(db, "Shows");
-            const q = query(showsCol, limit(50));
+            const q = query(showsCol, orderBy("updatedAt", "desc"), limit(10));
             const showsSnap = await getDocs(q);
 
             if (!showsSnap.empty) {
@@ -635,18 +635,20 @@ export default function SweetieWorldApp() {
         const safeSearch = searchTxt.toLowerCase().replace(/\s+/g, '');
 
         if (safeSearch.length > 0) {
-          baseQuery = query(collection(db, "Shows"), where("searchKeywords", "array-contains", safeSearch));
-      } else {
-          if (cat === 'Latest Releases') {
-              baseQuery = query(collection(db, "Shows"));
-          } else {
-              baseQuery = query(collection(db, "Shows"), where("category", "==", cat));
-          }
-      }
+            // Search Box တွင် စာရိုက်ထားလျှင် (Database ထဲမှ array-contains ဖြင့် တိုက်ရိုက်ရှာမည်)
+            baseQuery = query(collection(db, "Shows"), where("searchKeywords", "array-contains", safeSearch), orderBy("updatedAt", "desc"));
+        } else {
+            // Search မလုပ်ထားလျှင် ရိုးရိုး Category အတိုင်းပြမည်
+            if (cat === 'Latest Releases') {
+                baseQuery = query(collection(db, "Shows"), orderBy("updatedAt", "desc"));
+            } else {
+                baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("updatedAt", "desc"));
+            }
+        }
 
         const finalQuery = isLoadMore 
-            ? query(baseQuery, startAfter(lastVisible), limit(50))
-            : query(baseQuery, limit(50));
+            ? query(baseQuery, startAfter(lastVisible), limit(10))
+            : query(baseQuery, limit(10));
 
         const showsSnap = await getDocs(finalQuery);
 
