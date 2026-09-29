@@ -163,7 +163,7 @@ const TRANSLATIONS = {
     tgLinkPlaceholder: "VIP Telegram Link", qrLinkPlaceholder: "QR ပုံ Link ထည့်ပါ...", totEps: "စုစုပေါင်း အပိုင်း", newCatName: "အမျိုးအစား အမည်သစ်...", addBtn: "ထည့်မည်",
     approveBtn: "ထည့်ပေးမည်", rejectBtn: "ပယ်ဖျက်မည်", noReqs: "တောင်းဆိုမှုများ မရှိပါ။", cancelBtn: "Cancel", alertNotReleased: "မထုတ်ပြန်ရသေးပါ!",
     alertOrJoinVip: "အထိ စောင့်ပါ သို့မဟုတ် VIP သို့ ဝင်ပါ။", msgExists: "ဒီ Username (သို့) Email ဖွင့်ပြီးသားရှိနေပါသည်။",
-    msgSuccess: "အကောင့်ဖွင့်ခြင်း အောင်မြင်ပါသည်။", msgLoginSucc: "Login ဝင်ရောက်ခြင်း အောင်မြင်ပါသည်။", msgWrong: "Username သို့မဟုတ် Password မှားယွင်းနေပါသည်။",
+    msgSuccess: "အကောင့်ဖွင့်ခြင်း အောင်မြင်ပါသည်။", msgLoginSucc: "Login ဝင်ရောက်ခြင်း အောင်မြင်ပါသည်။", msgWrong: "Username သို့မဟုတ် Password မှားယွင်းနေပါသည်။ မမှတ်မိပါက Admin ထံသို့ ဆက်သွယ်စစ်ဆေးနိုင်ပါသည်။",
     msgPointSent: "ပေးပို့မှု အောင်မြင်ပါသည်။ Admin မှ စစ်ဆေးပေးပါမည်။", msgApproved: "Points ထည့်ပေးလိုက်ပါပြီ။", msgContentAdded: "အချက်အလက် သိမ်းဆည်းပြီးပါပြီ။",
     msgUploaded: "ဇာတ်ကားအချက်အလက် သိမ်းဆည်းပြီးပါပြီ။", msgVipSuccess: "VIP ဝင်ရောက်ခြင်း အောင်မြင်ပါသည်။",
     msgNotEnough: "Points မလုံလောက်ပါ။ လိုအပ်သည် - ", msgUserSaved: "အချက်အလက် ပြင်ဆင်/သိမ်းဆည်း ပြီးပါပြီ!", msgDeleted: "ဖျက်သိမ်းပြီးပါပြီ။",
@@ -1164,8 +1164,10 @@ export default function SweetieWorldApp() {
       setPointRequests(updatedReqs);
       
       // --- ၄။ Database သို့ ပြန်လည် သိမ်းဆည်းမည် (အခြားသူများ၏ Request များ အဖုံးမခံရတော့ပါ) ---
-      await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
-      await setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs });
+      await Promise.all([
+    setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis }),
+    setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs })
+]);
 
       showToast(t.msgPointSent);
       setIdCodeInput('');
