@@ -242,28 +242,26 @@ export default function SweetieWorldApp() {
   const [uiPage, setUiPage] = useState(1);
   const itemsPerPage = 10;
 
-  // NEW: Admin Content Summary States
-  const [adminSummary, setAdminSummary] = useState<Record<string, {count: number, titles: string[]}>>({});
+  // NEW: Admin Content Summary States (Upgraded for Edit)
+  const [adminSummary, setAdminSummary] = useState<Record<string, {count: number, shows: VideoCardData[]}>>({});
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
 
-  // NEW: Generate Summary Function
+  // NEW: Generate Summary Function (Upgraded for Edit)
   const handleGenerateSummary = async () => {
     setIsLoadingSummary(true);
     try {
       const allShowsSnap = await getDocs(collection(db, "Shows"));
-      const summary: Record<string, {count: number, titles: string[]}> = {};
+      const summary: Record<string, {count: number, shows: VideoCardData[]}> = {};
 
       allShowsSnap.forEach(doc => {
          const data = doc.data() as VideoCardData;
          const cat = data.category || 'Uncategorized';
-         // မြန်မာနာမည်ရှိရင် မြန်မာလိုပြ၊ မရှိမှ English (သို့) ID ကိုပြမည်
-         const title = data.title_mm || data.title_en || doc.id; 
 
          if(!summary[cat]) {
-            summary[cat] = { count: 0, titles: [] };
+            summary[cat] = { count: 0, shows: [] };
          }
          summary[cat].count += 1;
-         summary[cat].titles.push(title);
+         summary[cat].shows.push(data); // ဇာတ်ကား အချက်အလက် အပြည့်အစုံကို Report အတွက် သိမ်းမည်
        });
 
        setAdminSummary(summary);
@@ -3313,7 +3311,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                    {Object.keys(adminSummary).length > 0 && (
                       <div className="space-y-3 mt-5">
                          {Object.entries(adminSummary)
-                            .sort((a, b) => b[1].count - a[1].count) // ဇာတ်ကားအများဆုံး Category ကို အပေါ်တင်ပေးမည်
+                            .sort((a, b) => b[1].count - a[1].count)
                             .map(([cat, data]) => (
                             <details key={cat} className="bg-black/40 border border-zinc-700 rounded-lg p-1 group">
                                <summary className="font-bold text-white cursor-pointer flex justify-between items-center p-3 outline-none hover:bg-white/5 transition rounded-lg">
@@ -3325,9 +3323,20 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                      Total: {data.count}
                                   </span>
                                </summary>
-                               <div className="p-3 border-t border-zinc-800 text-sm text-zinc-300 flex flex-wrap gap-2 mt-1">
-                                  {data.titles.map((t, i) => (
-                                     <span key={i} className="bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800 text-xs shadow">{t}</span>
+                               <div className="p-3 border-t border-zinc-800 flex flex-col gap-2 mt-1">
+                                  {data.shows.map((s, i) => (
+                                     <div key={i} className="bg-zinc-900 px-4 py-3 rounded-lg border border-zinc-800 flex justify-between items-center shadow hover:border-zinc-600 transition">
+                                        <span className="text-sm font-bold text-zinc-300">{s.title_mm || s.title_en || s.id}</span>
+                                        <button onClick={() => {
+                                           setAdminActiveTab('upload');
+                                           setEditingShowId(s.id); 
+                                           setNewVideo(s); 
+                                           setEpCount(s.totalEpisodes || 0); 
+                                           window.scrollTo({top:0, behavior: 'smooth'});
+                                        }} className="bg-blue-900/40 text-blue-300 border border-blue-700/50 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-900 transition flex items-center gap-1.5 shrink-0 shadow">
+                                           <Edit className="w-3 h-3"/> Edit
+                                        </button>
+                                     </div>
                                   ))}
                                </div>
                             </details>
