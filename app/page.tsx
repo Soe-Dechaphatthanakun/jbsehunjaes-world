@@ -242,6 +242,39 @@ export default function SweetieWorldApp() {
   const [uiPage, setUiPage] = useState(1);
   const itemsPerPage = 10;
 
+  // NEW: Admin Content Summary States
+  const [adminSummary, setAdminSummary] = useState<Record<string, {count: number, titles: string[]}>>({});
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+
+  // NEW: Generate Summary Function
+  const handleGenerateSummary = async () => {
+    setIsLoadingSummary(true);
+    try {
+      const allShowsSnap = await getDocs(collection(db, "Shows"));
+      const summary: Record<string, {count: number, titles: string[]}> = {};
+
+      allShowsSnap.forEach(doc => {
+         const data = doc.data() as VideoCardData;
+         const cat = data.category || 'Uncategorized';
+         // မြန်မာနာမည်ရှိရင် မြန်မာလိုပြ၊ မရှိမှ English (သို့) ID ကိုပြမည်
+         const title = data.title_mm || data.title_en || doc.id; 
+
+         if(!summary[cat]) {
+            summary[cat] = { count: 0, titles: [] };
+         }
+         summary[cat].count += 1;
+         summary[cat].titles.push(title);
+       });
+
+       setAdminSummary(summary);
+    } catch(error) {
+       console.error(error);
+       showToast("Error loading summary");
+    } finally {
+       setIsLoadingSummary(false);
+    }
+  };
+
   // NEW: Movie Views States
   const [movieViews, setMovieViews] = useState<Record<string, MovieViewData>>({});
   const [viewStatsSearch, setViewStatsSearch] = useState('');
@@ -462,7 +495,7 @@ export default function SweetieWorldApp() {
 
         const fetchShows = async () => {
             const showsCol = collection(db, "Shows");
-            const q = query(showsCol, limit(1000));
+            const q = query(showsCol, orderBy("updatedAt", "desc"), limit(10));
             const showsSnap = await getDocs(q);
 
             if (!showsSnap.empty) {
@@ -635,18 +668,20 @@ export default function SweetieWorldApp() {
         const safeSearch = searchTxt.toLowerCase().replace(/\s+/g, '');
 
         if (safeSearch.length > 0) {
-          baseQuery = query(collection(db, "Shows"), where("searchKeywords", "array-contains", safeSearch));
-      } else {
-          if (cat === 'Latest Releases') {
-              baseQuery = query(collection(db, "Shows"));
-          } else {
-              baseQuery = query(collection(db, "Shows"), where("category", "==", cat));
-          }
-      }
+            // Search Box တွင် စာရိုက်ထားလျှင် (Database ထဲမှ array-contains ဖြင့် တိုက်ရိုက်ရှာမည်)
+            baseQuery = query(collection(db, "Shows"), where("searchKeywords", "array-contains", safeSearch), orderBy("updatedAt", "desc"));
+        } else {
+            // Search မလုပ်ထားလျှင် ရိုးရိုး Category အတိုင်းပြမည်
+            if (cat === 'Latest Releases') {
+                baseQuery = query(collection(db, "Shows"), orderBy("updatedAt", "desc"));
+            } else {
+                baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("updatedAt", "desc"));
+            }
+        }
 
         const finalQuery = isLoadMore 
-            ? query(baseQuery, startAfter(lastVisible), limit(1000))
-            : query(baseQuery, limit(1000));
+            ? query(baseQuery, startAfter(lastVisible), limit(10))
+            : query(baseQuery, limit(10));
 
         const showsSnap = await getDocs(finalQuery);
 
@@ -3261,6 +3296,45 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                 </div>
                 
                 <div className="bg-[#1f1f1f] p-5 rounded-2xl border border-zinc-800 shadow-xl">
+
+		{/* NEW SUMMARY SECTION (Admin ဇာတ်ကားစာရင်းချုပ်) */}
+                <div className="bg-[#1f1f1f] p-5 rounded-2xl border border-zinc-800 shadow-xl mb-6">
+                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                         <h4 className="text-lg font-bold text-[#fcd385]">Database Content Summary (ဇာတ်ကားစာရင်းချုပ်)</h4>
+                         <p className="text-xs text-zinc-400 mt-1">Category အလိုက် တင်ထားသော ဇာတ်ကားအရေအတွက်နှင့် ခေါင်းစဉ်များကို ကြည့်ရန် အောက်ပါခလုတ်ကို နှိပ်ပါ။</p>
+                      </div>
+                      <button onClick={handleGenerateSummary} disabled={isLoadingSummary} className="bg-gradient-to-r from-blue-900 to-indigo-900 text-blue-200 px-4 py-2 rounded-lg font-bold text-sm hover:brightness-110 transition border border-blue-700/50 flex items-center gap-2 whitespace-nowrap shadow-lg">
+                         {isLoadingSummary ? <RefreshCw className="w-4 h-4 animate-spin"/> : <ListVideo className="w-4 h-4"/>} 
+                         {isLoadingSummary ? 'Loading Report...' : 'Generate Full Report'}
+                      </button>
+                   </div>
+                   
+                   {Object.keys(adminSummary).length > 0 && (
+                      <div className="space-y-3 mt-5">
+                         {Object.entries(adminSummary)
+                            .sort((a, b) => b[1].count - a[1].count) // ဇာတ်ကားအများဆုံး Category ကို အပေါ်တင်ပေးမည်
+                            .map(([cat, data]) => (
+                            <details key={cat} className="bg-black/40 border border-zinc-700 rounded-lg p-1 group">
+                               <summary className="font-bold text-white cursor-pointer flex justify-between items-center p-3 outline-none hover:bg-white/5 transition rounded-lg">
+                                  <span className="flex items-center gap-2">
+                                     <span className="text-zinc-500 text-[10px] group-open:rotate-90 transition-transform">▶</span> 
+                                     {cat}
+                                  </span>
+                                  <span className="bg-[#3e1717] text-[#fcd385] px-3 py-1 rounded-full text-xs border border-[#fcd385]/30 shadow-inner">
+                                     Total: {data.count}
+                                  </span>
+                               </summary>
+                               <div className="p-3 border-t border-zinc-800 text-sm text-zinc-300 flex flex-wrap gap-2 mt-1">
+                                  {data.titles.map((t, i) => (
+                                     <span key={i} className="bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800 text-xs shadow">{t}</span>
+                                  ))}
+                               </div>
+                            </details>
+                         ))}
+                      </div>
+                   )}
+                </div>
 
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
                     <div className="relative w-full sm:w-64">
