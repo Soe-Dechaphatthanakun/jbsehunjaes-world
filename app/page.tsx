@@ -982,18 +982,26 @@ export default function SweetieWorldApp() {
 
         setUsers([newUser]); 
         
-        try { await setDoc(doc(db, "Users", newUser.username), newUser); }
-        catch (dbError) { console.error("Firebase saving error: ", dbError); }
-
-        setCurrentUser(newUser);
-        if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
-        else localStorage.removeItem('jbsehunjaes_auth');
-        
-        showToast(t.msgSuccess);
-        setAuthModalOpen(false);
-        setAuthForm({ username: '', email: '', password: '' });
-        setShowAuthPassword(false);
-        setShowWelcomePromo(true);
+        try { 
+          // Database ထဲ အောင်မြင်စွာ ဝင်သွားမှသာ အောက်ကအဆင့်တွေကို ဆက်လုပ်ပါမည်
+          await setDoc(doc(db, "Users", newUser.username), newUser); 
+          
+          setCurrentUser(newUser);
+          if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
+          else localStorage.removeItem('jbsehunjaes_auth');
+          
+          showToast(t.msgSuccess);
+          setAuthModalOpen(false);
+          setAuthForm({ username: '', email: '', password: '' });
+          setShowAuthPassword(false);
+          setShowWelcomePromo(true);
+          
+        } catch (dbError) { 
+          console.error("Firebase saving error: ", dbError); 
+          // Error တက်ခဲ့ရင် ရှေ့ဆက်မလုပ်ဘဲ တားထားလိုက်ပါမည်
+          setAuthError("အကောင့်ဖွင့်ရာတွင် အမှားအယွင်းဖြစ်သွားပါသည်။ အင်တာနက် (သို့) Username ကို ပြန်စစ်ပါ။");
+          return; // 👈 ချက်ချင်းရပ်ပစ်မည်
+        }
         
       } else if (authMode === 'login') {
         const rawInput = authForm.username.trim();
