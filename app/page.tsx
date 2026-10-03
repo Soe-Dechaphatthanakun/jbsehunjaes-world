@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment, startAfter, getAggregateFromServer, sum } from "firebase/firestore";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
   Globe, Menu, Home, HelpCircle, Gift, Info, Send, Phone,
@@ -29,6 +29,8 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const auth = getAuth(app); // သီးသန့်လုံခြုံသော Login စနစ်အတွက်
+const secondaryApp = getApps().find(a => a.name === "Secondary") || initializeApp(firebaseConfig, "Secondary");
+const secondaryAuth = getAuth(secondaryApp);
 
 // ------------------------------------------------------------------
 // INTERFACES & TYPES
@@ -671,12 +673,16 @@ export default function SweetieWorldApp() {
         const savedUser = localStorage.getItem('jbsehunjaes_auth');
         const currentUserData = loadedUsers ? loadedUsers.find((u: any) => u.username === savedUser) : null;
         if (currentUserData && currentUserData.role === 'admin') {
-            await Promise.all([
-                fetchDoc("pointRequests", setPointRequests, []),
-                fetchDoc("adminLogs", setAdminLogs, []),
-                fetchDoc("notifications", setNotifications, []),
-                fetchMovieViews() 
-            ]);
+            const pQ = query(collection(db, "PointRequests"), orderBy("date", "desc"), limit(100));
+            const lQ = query(collection(db, "AdminLogs"), orderBy("date", "desc"), limit(100));
+            const nQ = query(collection(db, "Notifications"), orderBy("date", "desc"), limit(100));
+            
+            const [pSnap, lSnap, nSnap] = await Promise.all([getDocs(pQ), getDocs(lQ), getDocs(nQ)]);
+            
+            setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
+            setAdminLogs(lSnap.docs.map(d => d.data() as AdminLogData));
+            setNotifications(nSnap.docs.map(d => d.data() as NotificationData));
+            await fetchMovieViews();
         }
         
         setIsDataFetched(true); 
@@ -713,18 +719,14 @@ export default function SweetieWorldApp() {
     isSyncing.current = true; 
     try {
       if (currentUser?.role === 'admin') {
-         const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
-         if (pSnap.exists() && pSnap.data().data) {
-            setPointRequests(prev => JSON.stringify(prev) !== JSON.stringify(pSnap.data().data) ? pSnap.data().data : prev);
-         }
-         const lSnap = await getDoc(doc(db, "SiteData", "adminLogs"));
-         if (lSnap.exists() && lSnap.data().data) {
-            setAdminLogs(prev => JSON.stringify(prev) !== JSON.stringify(lSnap.data().data) ? lSnap.data().data : prev);
-         }
-         const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
-         if (nSnap.exists() && nSnap.data().data) {
-            setNotifications(prev => JSON.stringify(prev) !== JSON.stringify(nSnap.data().data) ? nSnap.data().data : prev);
-         }
+         const pSnap = await getDocs(query(collection(db, "PointRequests"), orderBy("date", "desc"), limit(100)));
+         setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
+
+         const lSnap = await getDocs(query(collection(db, "AdminLogs"), orderBy("date", "desc"), limit(100)));
+         setAdminLogs(lSnap.docs.map(d => d.data() as AdminLogData));
+
+         const nSnap = await getDocs(query(collection(db, "Notifications"), orderBy("date", "desc"), limit(100)));
+         setNotifications(nSnap.docs.map(d => d.data() as NotificationData));
       }
 
 
@@ -1062,6 +1064,11 @@ export default function SweetieWorldApp() {
       if (authMode === 'register') {
         const inputUsername = authForm.username.trim();
         const inputEmail = authForm.email.trim().toLowerCase();
+
+	// --- အသစ်ထပ်ထည့်ရမည့် အပိုင်း စတင်ရန် ---
+        if (authForm.password.length < 6) {
+            return setAuthError("စကားဝှက် (Password) အနည်းဆုံး ဂဏန်း/စာသား (၆) လုံး ရှိရပါမည်။");
+        }
         
         // ၁။ Username ကို Database တွင် ရှိ/မရှိ အရင်စစ်မည်
         const usernameSnap = await getDoc(doc(db, "Users", inputUsername));
@@ -1168,25 +1175,43 @@ export default function SweetieWorldApp() {
     }
   };
 
-  const handlePasswordUpdate = (e: React.FormEvent) => {
-  e.preventDefault();
-  if(!currentUser) return;
-  if(pwdForm.old !== currentUser.password) {
-     return setAlertModal({ message: t.wrongOldPwd });
-  }
-  if(pwdForm.new !== pwdForm.confirm) {
-     return setAlertModal({ message: t.pwdMismatch });
-  }
-  const updatedUsers = users.map(u => u.username === currentUser.username ? {...u, password: pwdForm.new.trim()} : u);
-  setUsers(updatedUsers);
-  // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
-  setDoc(doc(db, "Users", currentUser.username), {...currentUser, password: pwdForm.new.trim()});
-  setCurrentUser({...currentUser, password: pwdForm.new.trim()});
-  showToast("Password updated successfully!");
-  setChangePwdModalOpen(false);
-  setPwdForm({ old: '', new: '', confirm: '' });
-  setShowPwdOld(false); setShowPwdNew(false); setShowPwdConfirm(false);
-};
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    
+    // Password အသစ် နှစ်ခု တူ/မတူ စစ်ဆေးခြင်း
+    if (pwdForm.new !== pwdForm.confirm) {
+       return setAlertModal({ message: t.pwdMismatch });
+    }
+    // Password အသစ်သည် အနည်းဆုံး ၆ လုံး ရှိ/မရှိ စစ်ဆေးခြင်း
+    if (pwdForm.new.length < 6) {
+       return setAlertModal({ message: "စကားဝှက် (Password) အနည်းဆုံး ၆ လုံး ရှိရပါမည်။" });
+    }
+
+    const user = auth.currentUser;
+    
+    if (user && user.email) {
+        try {
+            // ၁။ အရင်ဆုံး Old Password မှန်/မမှန် Firebase Auth ဖြင့် လုံခြုံစွာ စစ်ဆေးမည်
+            const credential = EmailAuthProvider.credential(user.email, pwdForm.old);
+            await reauthenticateWithCredential(user, credential);
+
+            // ၂။ Old Password မှန်ကန်ပါက Firebase Auth တွင် Password အသစ်ပြောင်းပေးမည်
+            await updatePassword(user, pwdForm.new);
+            
+            showToast("Password updated successfully!");
+            setChangePwdModalOpen(false);
+            setPwdForm({ old: '', new: '', confirm: '' });
+            setShowPwdOld(false); setShowPwdNew(false); setShowPwdConfirm(false);
+        } catch (error: any) {
+            console.error(error);
+            // Old Password မှားနေပါက သတိပေးမည်
+            setAlertModal({ message: t.wrongOldPwd }); 
+        }
+    } else {
+        setAlertModal({ message: "လုပ်ဆောင်မှု မအောင်မြင်ပါ။ Login ပြန်ဝင်ပြီးမှ ထပ်ကြိုးစားကြည့်ပါ။" });
+    }
+  };
 
   const handlePointSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1255,6 +1280,16 @@ export default function SweetieWorldApp() {
         isSyncing.current = false;
         return setAlertModal({ message: t.msgExists });
       }
+      // Firebase Auth တွင် အကောင့်အရင်ဖန်တီးမည် (Admin အကောင့်ထဲမှ မထွက်ကျစေရန် Secondary Auth ကို သုံးပါမည်)
+      try {
+          // TS Error ဖြေရှင်းရန် - email နှင့် password နေရာတွင် || '' ထည့်ပေးပါသည်
+          await createUserWithEmailAndPassword(secondaryAuth, (editUserForm.email || '').trim(), (editUserForm.password || '').trim());
+          await secondaryAuth.signOut(); 
+      } catch (error: any) {
+          isSyncing.current = false;
+          return setAlertModal({ message: "Error: Email အသုံးပြုပြီးသား ဖြစ်နေနိုင်ပါသည်။" });
+      }
+
       const newUser = {
          ...cleanEditUserForm, 
          points: finalPoints,
@@ -1263,6 +1298,8 @@ export default function SweetieWorldApp() {
          lastLoginAt: new Date().toISOString(),
          pointHistory: []
       };
+      delete newUser.password; // Admin panel တွင် Password ကို အတိုင်းသား ဆက်မသိမ်းတော့ပါ
+
       updatedUsersList = [newUser, ...users];
       setUsers(updatedUsersList);
     } else {
@@ -1342,8 +1379,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
      });
      setNotifications(updatedNotis);
      
-     // ၂။ Race Condition ကိုကျော်ဖြတ်ရန် Firebase ဆီသို့ "ဖတ်ပြီးကြောင်း" တိုက်ရိုက်လှမ်းသိမ်းမည်
-     setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
+     // ၂။ Collection အသစ်ဆီသို့ "ဖတ်ပြီးကြောင်း" တိုက်ရိုက်လှမ်းသိမ်းမည်
+     const targetNoti = updatedNotis.find(x => x.id === n.id);
+     if (targetNoti) {
+         setDoc(doc(db, "Notifications", n.id), targetNoti, { merge: true });
+     }
 
      setNotiDropdownOpen(false);
      if(n.actionType === 'point_request') { setAdminDashboardOpen(true); setAdminActiveTab('points'); } 
@@ -1815,10 +1855,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                       <ChevronRight className="w-4 h-4 text-white/50"/>
                     </button>
                     {/* NEW: Logout နှိပ်သည်နှင့် Background Sync များပြတ်တောက်သွားစေရန် window.location.reload() ကို အသုံးပြုထားသည် */}
-                    <button onClick={() => {
-                      localStorage.removeItem('jbsehunjaes_auth');
-                      window.location.reload(); 
-                    }} className="w-full flex items-center justify-between p-3 bg-black/20 hover:bg-black/40 rounded-xl transition text-white font-bold text-sm">
+                    <button onClick={async () => {
+                  await auth.signOut(); // Firebase Auth မှ အပြည့်အဝ ထွက်မည်
+                  localStorage.removeItem('jbsehunjaes_auth');
+                  window.location.reload(); 
+                }} className="w-full flex items-center justify-between p-3 bg-black/20 hover:bg-black/40 rounded-xl transition text-white font-bold text-sm">
                       <div className="flex items-center gap-3"><LogOut className="w-4 h-4"/> {t.logout}</div>
                       <ChevronRight className="w-4 h-4 text-white/50"/>
                     </button>
@@ -2424,9 +2465,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     }
     const updatedNotis = [newNoti, ...latestNotis];
 
-    // 💡 Error 5 ပြင်ရန် ( updatedPointReqs မရှိတော့သဖြင့် ဖြုတ်လိုက်ပါသည် )
     setNotifications(updatedNotis);
-
 
     showToast(`${amount} ${t.msgApproved}`);
   } catch (error) {
@@ -2449,13 +2488,18 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                    message: `ID ${req.idCode} အတွက် ပယ်ချလိုက်ပါသည်။ Remark ကိုဖတ်ရန်နှိပ်ပါ။`, detail: reason,
                                    date: new Date().toISOString(), isRead: false, actionType: 'point_reject'
                                  };
-                                 const updatedReqs = pointRequests.map((p): PointRequest => p.id === req.id ? { ...p, status: 'rejected', remark: reason } : p);
-                                 const updatedNotis = [newNoti, ...notifications];
-                                 setPointRequests(updatedReqs);
-                                 setNotifications(updatedNotis);
-                                 // Firebase သို့ တိုက်ရိုက် Save မည်
-                                 setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs });
-                                 setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
+                                 // Firebase သို့ Collection အသစ်ဖြင့် တိုက်ရိုက် Save မည်
+                                 // 💡 TS Error ဖြေရှင်းရန် : PointRequest ဟု ကြေညာပေးရပါမည်
+                                 const rejectedReq: PointRequest = { 
+                                     ...req, 
+                                     status: 'rejected', 
+                                     remark: reason 
+                                 };
+                                 setDoc(doc(db, "PointRequests", req.id), rejectedReq);
+                                 setDoc(doc(db, "Notifications", newNoti.id), newNoti);
+
+                                 setPointRequests(pointRequests.map(p => p.id === req.id ? rejectedReq : p));
+                                 setNotifications([newNoti, ...notifications]);
                                  showToast("Request Rejected");
                                }
                              });
@@ -2517,9 +2561,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                              setConfirmModal({
                                message: `Are you sure you want to delete ${recordsToDelete.length} records? This action cannot be undone.`,
                                onConfirm: () => {
-                                 const remaining = pointRequests.filter(r => !recordsToDelete.includes(r));
-                                 setPointRequests(remaining);
-                                 setDoc(doc(db, "SiteData", "pointRequests"), { data: remaining }); // 🌟 ဤစာကြောင်း ထပ်ဖြည့်ပါ
+                                 // Collection သစ်မှ Document များကို ဖျက်မည်
+                                 const deletePromises = recordsToDelete.map(r => deleteDoc(doc(db, "PointRequests", r.id)));
+                                 Promise.all(deletePromises).then(() => {
+                                    setPointRequests(pointRequests.filter(r => !recordsToDelete.includes(r)));
+                                 });
                                  setBulkDeleteDateFrom('');
                                  setBulkDeleteDateTo('');
                                  showToast(`${recordsToDelete.length} records deleted.`);
@@ -2580,9 +2626,9 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                  setConfirmModal({
                                    message: t.confirmDelDesc,
                                    onConfirm: () => {
-                                      const updatedReqs = pointRequests.filter(p => p.id !== req.id);
-                                      setPointRequests(updatedReqs);
-                                      setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs }); // Firebase ပေါ်မှပါ ဖျက်မည်
+                                     deleteDoc(doc(db, "PointRequests", req.id)).then(() => {
+                                         setPointRequests(pointRequests.filter(p => p.id !== req.id));
+                                      });
                                       showToast(t.msgDeleted);
                                    }
                                  });
@@ -2642,9 +2688,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                              setConfirmModal({
                                message: `Are you sure you want to delete ${logsToDelete.length} logs? This action cannot be undone.`,
                                onConfirm: () => {
-                                 const remaining = adminLogs.filter(r => !logsToDelete.includes(r));
-                                 setAdminLogs(remaining);
-                                 setDoc(doc(db, "SiteData", "adminLogs"), { data: remaining }); // 🌟 ဤစာကြောင်း ထပ်ဖြည့်ပါ
+                                 // Collection အသစ် (AdminLogs) ထဲမှ Document လေးများကို ဖျက်မည်
+                                 const deletePromises = logsToDelete.map(r => deleteDoc(doc(db, "AdminLogs", r.id)));
+                                 Promise.all(deletePromises).then(() => {
+                                    setAdminLogs(adminLogs.filter(r => !logsToDelete.includes(r)));
+                                 });
                                  setAdminLogBulkDateFrom('');
                                  setAdminLogBulkDateTo('');
                                  showToast(`${logsToDelete.length} logs deleted.`);
@@ -2688,10 +2736,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                             setConfirmModal({
                               message: t.confirmDelDesc,
                               onConfirm: () => { 
-                                  const updatedLogs = adminLogs.filter(p => p.id !== log.id);
-                                  setAdminLogs(updatedLogs); 
-                                  setDoc(doc(db, "SiteData", "adminLogs"), { data: updatedLogs }); // Firebase ပေါ်မှပါ ဖျက်မည်
-                                  showToast(t.msgDeleted); 
+                                 // Collection အသစ် (AdminLogs) ထဲမှ Document ကို ဖျက်မည်
+                                  deleteDoc(doc(db, "AdminLogs", log.id)).then(() => {
+                                     setAdminLogs(adminLogs.filter(p => p.id !== log.id));
+                                  });
+                                  showToast(t.msgDeleted);
                               }
                             });
                           }} className="p-2 bg-zinc-800 rounded text-red-400 hover:bg-zinc-700 transition"><Trash2 className="w-4 h-4"/></button>
@@ -4287,7 +4336,7 @@ trackMovieView(platformSelectModal.show.id);
               )}
               {(authMode === 'login' || authMode === 'register') && (
                 <div className="relative w-full">
-                  <input type={showAuthPassword ? "text" : "password"} required placeholder={t.password} value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})} className="w-full bg-black/40 border border-zinc-700/50 p-3 pr-10 rounded-lg text-white text-sm focus:outline-none focus:border-[#fcd385]" />
+                  <input type={showAuthPassword ? "text" : "password"} maxLength={30} required placeholder={t.password} value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})} className="w-full bg-black/40 border border-zinc-700/50 p-3 pr-10 rounded-lg text-white text-sm focus:outline-none focus:border-[#fcd385]" />
                   <button type="button" onClick={() => setShowAuthPassword(!showAuthPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white">
                     {showAuthPassword ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
                   </button>
