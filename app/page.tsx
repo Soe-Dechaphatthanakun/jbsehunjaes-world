@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment, startAfter } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment, startAfter, getAggregateFromServer, sum } from "firebase/firestore";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
   Globe, Menu, Home, HelpCircle, Gift, Info, Send, Phone,
@@ -324,31 +324,88 @@ export default function SweetieWorldApp() {
   const [userPointsSearch, setUserPointsSearch] = useState('');
   const [selectedMethodForDetail, setSelectedMethodForDetail] = useState<string | null>(null);
   
-  // --- NEW: PurchaseLogs States & Fetch Logic ---
+  // --- NEW: User Point Balances States & Fetch Logic ---
+  const [userBalancesLogs, setUserBalancesLogs] = useState<UserData[]>([]);
+  const [userBalancesLastVisible, setUserBalancesLastVisible] = useState<any>(null);
+  const [userBalancesHasMore, setUserBalancesHasMore] = useState(true);
+  const [userBalancesLoading, setUserBalancesLoading] = useState(false);
+  const [userBalancesSearch, setUserBalancesSearch] = useState('');
+
+  const fetchUserBalances = async (isLoadMore = false, searchTxt = userBalancesSearch) => {
+      if (isLoadMore && (!userBalancesLastVisible || !userBalancesHasMore)) return;
+      setUserBalancesLoading(true);
+      try {
+          let constraints: any[] = [];
+          if (searchTxt.trim()) {
+              constraints.push(where("username", "==", searchTxt.trim()));
+          } else {
+              constraints.push(orderBy("points", "desc"));
+          }
+          if (isLoadMore && userBalancesLastVisible) {
+              constraints.push(startAfter(userBalancesLastVisible));
+          }
+          constraints.push(limit(10));
+
+          const finalQuery = query(collection(db, "Users"), ...constraints);
+          const snap = await getDocs(finalQuery);
+
+          if (!snap.empty) {
+              const logs = snap.docs.map(d => d.data() as UserData);
+              setUserBalancesLogs(isLoadMore ? prev => [...prev, ...logs] : logs);
+              setUserBalancesLastVisible(snap.docs[snap.docs.length - 1]);
+              setUserBalancesHasMore(snap.docs.length === 10);
+          } else {
+              if (!isLoadMore) setUserBalancesLogs([]);
+              setUserBalancesHasMore(false);
+          }
+      } catch (err) { console.error("Fetch Error:", err); } finally { setUserBalancesLoading(false); }
+  };
+
+  // --- NEW: PurchaseLogs States & Fetch Logic (Updated with Date Range & Sum) ---
   const [purchaseLogs, setPurchaseLogs] = useState<any[]>([]);
   const [purchaseLogsLastVisible, setPurchaseLogsLastVisible] = useState<any>(null);
   const [purchaseLogsHasMore, setPurchaseLogsHasMore] = useState(true);
   const [purchaseLogsLoading, setPurchaseLogsLoading] = useState(false);
-  const [purchaseLogDateFilter, setPurchaseLogDateFilter] = useState('');
+  const [purchaseLogDateFrom, setPurchaseLogDateFrom] = useState('');
+  const [purchaseLogDateTo, setPurchaseLogDateTo] = useState('');
   const [purchaseLogTitleFilter, setPurchaseLogTitleFilter] = useState('');
+  const [purchaseLogTotalSum, setPurchaseLogTotalSum] = useState<number | null>(null);
 
-  const fetchPurchaseLogs = async (isLoadMore = false, dateFilter = purchaseLogDateFilter) => {
+  const fetchPurchaseLogs = async (isLoadMore = false, dateFrom = purchaseLogDateFrom, dateTo = purchaseLogDateTo, titleFilter = purchaseLogTitleFilter) => {
       if (isLoadMore && (!purchaseLogsLastVisible || !purchaseLogsHasMore)) return;
       setPurchaseLogsLoading(true);
       try {
           let constraints: any[] = [];
-          if (dateFilter) {
-              const fromD = new Date(dateFilter); fromD.setHours(0, 0, 0, 0);
-              const toD = new Date(dateFilter); toD.setHours(23, 59, 59, 999);
+          
+          if (titleFilter.trim()) {
+              // Exact title search
+              constraints.push(where("title", "==", titleFilter.trim()));
+          } else if (dateFrom && dateTo) {
+              // Date Range search
+              const fromD = new Date(dateFrom); fromD.setHours(0, 0, 0, 0);
+              const toD = new Date(dateTo); toD.setHours(23, 59, 59, 999);
               constraints.push(where("date", ">=", fromD.toISOString()));
               constraints.push(where("date", "<=", toD.toISOString()));
+              constraints.push(orderBy("date", "desc"));
+          } else {
+              constraints.push(orderBy("date", "desc"));
           }
-          constraints.push(orderBy("date", "desc"));
           
+          // Calculate Total SUM (Cost: 1 Read Only) - only if we are applying a filter
+          if (!isLoadMore && (titleFilter.trim() || (dateFrom && dateTo))) {
+              try {
+                  const baseQuery = query(collection(db, "PurchaseLogs"), ...constraints);
+                  const sumSnap = await getAggregateFromServer(baseQuery, { total: sum('amount') });
+                  setPurchaseLogTotalSum(sumSnap.data().total || 0);
+              } catch(e) { console.error("Aggregation Error", e); }
+          } else if (!isLoadMore) {
+              setPurchaseLogTotalSum(null); // Hide sum if no filter
+          }
+
           if (isLoadMore && purchaseLogsLastVisible) {
               constraints.push(startAfter(purchaseLogsLastVisible));
           }
-          constraints.push(limit(10)); // Limit 10 ထားရှိခြင်း
+          constraints.push(limit(10));
 
           const finalQuery = query(collection(db, "PurchaseLogs"), ...constraints);
           const snap = await getDocs(finalQuery);
@@ -362,11 +419,7 @@ export default function SweetieWorldApp() {
               if (!isLoadMore) setPurchaseLogs([]);
               setPurchaseLogsHasMore(false);
           }
-      } catch (err) {
-          console.error("Fetch Error:", err);
-      } finally {
-          setPurchaseLogsLoading(false);
-      }
+      } catch (err) { console.error("Fetch Error:", err); } finally { setPurchaseLogsLoading(false); }
   };
 
   // NEW: Promotion Popup State
@@ -2000,12 +2053,12 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                               <p className="text-xs text-red-500/70 font-bold mb-1 group-hover:text-red-400 transition">Inactive Users</p>
                               <p className="text-2xl font-black text-red-400">{inactiveUsers}</p>
                            </div>
-                           <div onClick={() => setShowUserPointsModal(true)} className="bg-gradient-to-br from-[#3e1717] to-black p-4 rounded-xl border border-[#fcd385]/30 shadow-lg cursor-pointer hover:border-[#fcd385] transition group">
+                           <div onClick={() => { setShowUserPointsModal(true); fetchUserBalances(false, ''); }} className="bg-gradient-to-br from-[#3e1717] to-black p-4 rounded-xl border border-[#fcd385]/30 shadow-lg cursor-pointer hover:border-[#fcd385] transition group">
                               <p className="text-xs text-[#fcd385]/70 font-bold mb-1 group-hover:text-[#fcd385] transition">Total Points (Remaining) <span className="text-[9px] text-zinc-500 ml-1">(View Detail)</span></p>
                               <p className="text-2xl font-black text-[#fcd385]">{totalPoints.toLocaleString()} <span className="text-xs">PTS</span></p>
                            </div>
                            {/* NEW: Total Points Spent Card */}
-                           <div onClick={() => { setShowPointsSpentModal(true); setPurchaseLogDateFilter(''); setPurchaseLogTitleFilter(''); fetchPurchaseLogs(false, ''); }} className="bg-gradient-to-br from-purple-900/20 to-black p-4 rounded-xl border border-purple-500/30 shadow-lg cursor-pointer hover:border-purple-400 transition group">
+                           <div onClick={() => { setShowPointsSpentModal(true); setPurchaseLogDateFrom(''); setPurchaseLogDateTo(''); setPurchaseLogTitleFilter(''); setPurchaseLogTotalSum(null); fetchPurchaseLogs(false, '', '', ''); }} className="bg-gradient-to-br from-purple-900/20 to-black p-4 rounded-xl border border-purple-500/30 shadow-lg cursor-pointer hover:border-purple-400 transition group">
                               <p className="text-xs text-purple-400/70 font-bold mb-1 group-hover:text-purple-300 transition">Total Points Spent</p>
                               <p className="text-2xl font-black text-purple-400">{totalPointsSpent.toLocaleString()} <span className="text-xs">PTS</span></p>
                            </div>
@@ -4518,23 +4571,22 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
         </div>
       )}
 
-	{/* --- NEW: USERS POINT BALANCES MODAL --- */}
-      {showUserPointsModal && (() => {
-         const userPointsLogs = users.filter(u => u.username.toLowerCase().includes((userPointsSearch || '').toLowerCase())).sort((a, b) => (b.points || 0) - (a.points || 0));
-         const paginatedUserPoints = userPointsLogs.slice((userPointsPage - 1) * userPointsPerPage, userPointsPage * userPointsPerPage);
-         return (
+	{/* --- NEW: USERS POINT BALANCES MODAL (Updated Limit 10) --- */}
+      {showUserPointsModal && (
            <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-sans animate-fade-in">
              <div className="bg-gradient-to-b from-[#2b0303] to-[#161616] border border-[#fcd385]/30 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.9)] relative overflow-hidden">
                 <div className="p-5 border-b border-[#fcd385]/20 flex justify-between items-center bg-black/40">
                   <h2 className="text-xl font-black text-[#fcd385] flex items-center gap-2"><Coins className="w-5 h-5"/> Users Point Balances</h2>
-                  <button onClick={() => {setShowUserPointsModal(false); setUserPointsSearch('');}} className="text-zinc-400 hover:text-white transition"><X className="w-6 h-6"/></button>
+                  <button onClick={() => {setShowUserPointsModal(false); setUserBalancesSearch('');}} className="text-zinc-400 hover:text-white transition"><X className="w-6 h-6"/></button>
                 </div>
                 
-                <div className="p-4 border-b border-zinc-800 bg-black/20">
-                  <div className="relative w-full max-w-md">
+                <div className="p-4 border-b border-zinc-800 bg-black/20 flex gap-2">
+                  <div className="relative flex-1 max-w-md">
                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                    <input type="text" placeholder="Search by Username..." value={userPointsSearch} onChange={e => {setUserPointsSearch(e.target.value); setUserPointsPage(1);}} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" />
+                    <input type="text" placeholder="Search by Exact Username..." value={userBalancesSearch} onChange={e => setUserBalancesSearch(e.target.value)} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" />
                   </div>
+                  <button onClick={() => fetchUserBalances(false, userBalancesSearch)} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition">Search</button>
+                  {userBalancesSearch && <button onClick={() => {setUserBalancesSearch(''); fetchUserBalances(false, '');}} className="bg-red-900/50 hover:bg-red-800 text-red-300 px-4 py-2 rounded-lg text-xs font-bold transition">Clear</button>}
                 </div>
 
                 <div className="p-5 overflow-y-auto custom-scrollbar flex-1 flex flex-col">
@@ -4548,14 +4600,14 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                            </tr>
                         </thead>
                         <tbody>
-                          {paginatedUserPoints.length === 0 ? (
+                          {userBalancesLoading && userBalancesLogs.length === 0 ? (
+                             <tr><td colSpan={3} className="text-center py-10"><RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#fcd385]" /></td></tr>
+                          ) : userBalancesLogs.length === 0 ? (
                              <tr><td colSpan={3} className="text-center py-8 text-zinc-500 text-sm">No users found.</td></tr>
-                          ) : paginatedUserPoints.map((u, idx) => (
+                          ) : userBalancesLogs.map((u, idx) => (
                             <tr key={idx} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
                               <td className="px-4 py-3 font-bold text-blue-400 cursor-pointer hover:underline" onClick={() => {
-                                  setShowUserPointsModal(false);
-                                  setUserPointsSearch('');
-                                  setUserDetailModal(u);
+                                  setShowUserPointsModal(false); setUserBalancesSearch(''); setUserDetailModal(u);
                               }}>{u.username}</td>
                               <td className="px-4 py-3 text-xs text-zinc-400">{u.email}</td>
                               <td className="px-4 py-3 text-right font-bold text-[#fcd385]">{u.points} PTS</td>
@@ -4564,14 +4616,17 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                         </tbody>
                       </table>
                    </div>
-                   <div className="mt-4">
-                      {userPointsLogs.length > 0 && renderPagination(userPointsPage, setUserPointsPage, userPointsPerPage, setUserPointsPerPage, userPointsLogs.length)}
+                   {/* Custom Load More Pagination */}
+                   <div className="mt-4 flex items-center justify-between bg-black/40 p-3 rounded-xl border border-zinc-800">
+                      <p className="text-xs text-zinc-500 font-bold">Showing Latest Top Users</p>
+                      <button disabled={!userBalancesHasMore || userBalancesLoading} onClick={() => fetchUserBalances(true, userBalancesSearch)} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-[#fcd385] disabled:opacity-50 rounded-lg text-xs font-bold transition flex items-center gap-2">
+                        {userBalancesLoading ? <RefreshCw className="w-3 h-3 animate-spin"/> : 'Load Next 10'}
+                      </button>
                    </div>
                 </div>
              </div>
            </div>
-         );
-      })()}
+      )}
 
       {/* --- NEW: INACTIVE USERS MODAL --- */}
       {showInactiveUsersModal && (
@@ -4627,7 +4682,7 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
         </div>
       )}
 
-      {/* --- NEW: POINTS SPENT HISTORY MODAL (WITH PURCHASE LOGS) --- */}
+	{/* --- NEW: POINTS SPENT HISTORY MODAL (Updated Date Range & Total Sum) --- */}
       {showPointsSpentModal && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-sans">
           <div className="bg-gradient-to-b from-[#2b0303] to-[#161616] border border-purple-500/30 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.9)] relative overflow-hidden">
@@ -4637,52 +4692,61 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
              </div>
              
              {/* Filter & Safe Bulk Delete Section */}
-             <div className="p-4 border-b border-zinc-800 bg-black/20 flex flex-wrap gap-4 items-center justify-between">
-               <div className="flex items-center gap-2 flex-wrap flex-1">
-                 <div className="relative w-full sm:w-64">
-                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                   <input type="text" placeholder="Search Movie Title..." value={purchaseLogTitleFilter} onChange={e => setPurchaseLogTitleFilter(e.target.value)} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500" />
-                 </div>
-                 <div className="flex items-center gap-2">
-                   <input type="date" value={purchaseLogDateFilter} onChange={e => {
-                       setPurchaseLogDateFilter(e.target.value);
-                       fetchPurchaseLogs(false, e.target.value);
-                   }} className="bg-black border border-zinc-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 cursor-pointer" />
-                   <button onClick={() => { setPurchaseLogDateFilter(''); setPurchaseLogTitleFilter(''); fetchPurchaseLogs(false, ''); }} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg font-bold transition shadow border border-zinc-700">Clear</button>
+             <div className="p-4 border-b border-zinc-800 bg-black/20 flex flex-col gap-4">
+               
+               <div className="flex flex-wrap gap-4 items-center justify-between">
+                 <div className="flex items-center gap-2 flex-wrap flex-1">
+                   <div className="relative w-full sm:w-64">
+                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                     <input type="text" placeholder="Exact Movie Title..." value={purchaseLogTitleFilter} onChange={e => setPurchaseLogTitleFilter(e.target.value)} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500" />
+                   </div>
+                   <div className="flex items-center gap-2">
+                     <input type="date" value={purchaseLogDateFrom} onChange={e => setPurchaseLogDateFrom(e.target.value)} className="bg-black border border-zinc-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 cursor-pointer" />
+                     <span className="text-zinc-500 text-xs">To</span>
+                     <input type="date" value={purchaseLogDateTo} onChange={e => setPurchaseLogDateTo(e.target.value)} className="bg-black border border-zinc-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 cursor-pointer" />
+                     
+                     <button onClick={() => { fetchPurchaseLogs(false, purchaseLogDateFrom, purchaseLogDateTo, purchaseLogTitleFilter); }} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-xs font-bold transition shadow border border-purple-500">Search</button>
+                     <button onClick={() => { setPurchaseLogDateFrom(''); setPurchaseLogDateTo(''); setPurchaseLogTitleFilter(''); setPurchaseLogTotalSum(null); fetchPurchaseLogs(false, '', '', ''); }} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg font-bold transition shadow border border-zinc-700">Clear</button>
+                   </div>
                  </div>
                </div>
-
-               {/* Delete by Date Button */}
-               {(purchaseLogDateFilter) && (
-                 <button onClick={() => {
-                     setConfirmModal({
-                       message: `${purchaseLogDateFilter} ရက်နေ့ရှိ ဝယ်ယူမှုမှတ်တမ်း (ဘေလ်ဖြတ်ပိုင်း) များကိုသာ ဖျက်ပစ်မည်မှာ သေချာပါသလား? (မှတ်ချက် - User များ၏ ဇာတ်ကားကြည့်ခွင့် VIP များ လုံးဝ ပျက်သွားမည် မဟုတ်ပါ)`,
-                       onConfirm: async () => {
-                           isSyncing.current = true;
-                           try {
-                               const fromD = new Date(purchaseLogDateFilter); fromD.setHours(0, 0, 0, 0);
-                               const toD = new Date(purchaseLogDateFilter); toD.setHours(23, 59, 59, 999);
-                               const delQuery = query(collection(db, "PurchaseLogs"), where("date", ">=", fromD.toISOString()), where("date", "<=", toD.toISOString()));
-                               const snap = await getDocs(delQuery);
-                               
-                               // Batch Delete Only For that specific Date
-                               const deletePromises = snap.docs.map(d => deleteDoc(doc(db, "PurchaseLogs", d.id)));
-                               await Promise.all(deletePromises);
-                               
-                               showToast(`မှတ်တမ်း ${snap.docs.length} ခု အောင်မြင်စွာ ဖျက်သိမ်းပြီးပါပြီ။`);
-                               fetchPurchaseLogs(false, purchaseLogDateFilter);
-                           } catch (error) {
-                               console.error(error);
-                               showToast("ဖျက်သိမ်းရာတွင် အမှားအယွင်းရှိနေပါသည်။");
-                           } finally {
-                               isSyncing.current = false;
-                           }
-                       }
-                     });
-                 }} className="bg-red-900/50 hover:bg-red-800 text-red-400 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-red-900/50 shadow-inner">
-                    <Trash2 className="w-4 h-4"/> Delete Data ({purchaseLogDateFilter})
-                 </button>
-               )}
+               
+               {/* Summary & Delete Bar */}
+               <div className="flex justify-between items-center bg-black/40 p-3 rounded-lg border border-purple-900/30">
+                  <div>
+                    {purchaseLogTotalSum !== null ? (
+                        <p className="text-sm text-zinc-300 font-bold">Total Points Spent for Result: <span className="text-lg font-black text-purple-400 ml-2">{purchaseLogTotalSum.toLocaleString()} PTS</span></p>
+                    ) : (
+                        <p className="text-xs text-zinc-500">Search to see Total Sum.</p>
+                    )}
+                  </div>
+                  
+                  {/* Delete by Date Button */}
+                  {(purchaseLogDateFrom && purchaseLogDateTo) && (
+                    <button onClick={() => {
+                        setConfirmModal({
+                          message: `${purchaseLogDateFrom} မှ ${purchaseLogDateTo} အတွင်းရှိ ဝယ်ယူမှုမှတ်တမ်းများကိုသာ ဖျက်ပစ်မည်မှာ သေချာပါသလား? (User များ၏ VIP ကြည့်ခွင့် လုံးဝ မပျက်သွားပါ)`,
+                          onConfirm: async () => {
+                              isSyncing.current = true;
+                              try {
+                                  const fromD = new Date(purchaseLogDateFrom); fromD.setHours(0, 0, 0, 0);
+                                  const toD = new Date(purchaseLogDateTo); toD.setHours(23, 59, 59, 999);
+                                  const delQuery = query(collection(db, "PurchaseLogs"), where("date", ">=", fromD.toISOString()), where("date", "<=", toD.toISOString()));
+                                  const snap = await getDocs(delQuery);
+                                  
+                                  const deletePromises = snap.docs.map(d => deleteDoc(doc(db, "PurchaseLogs", d.id)));
+                                  await Promise.all(deletePromises);
+                                  
+                                  showToast(`မှတ်တမ်း ${snap.docs.length} ခု အောင်မြင်စွာ ဖျက်သိမ်းပြီးပါပြီ။`);
+                                  fetchPurchaseLogs(false, purchaseLogDateFrom, purchaseLogDateTo, purchaseLogTitleFilter);
+                              } catch (error) { console.error(error); showToast("ဖျက်သိမ်းရာတွင် အမှားအယွင်းရှိနေပါသည်။"); } finally { isSyncing.current = false; }
+                          }
+                        });
+                    }} className="bg-red-900/50 hover:bg-red-800 text-red-400 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-red-900/50 shadow-inner">
+                       <Trash2 className="w-4 h-4"/> Delete Filtered Data
+                    </button>
+                  )}
+               </div>
              </div>
 
              {/* Table Section */}
@@ -4700,9 +4764,9 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                      <tbody>
                        {purchaseLogsLoading && purchaseLogs.length === 0 ? (
                           <tr><td colSpan={4} className="text-center py-10"><RefreshCw className="w-5 h-5 animate-spin mx-auto text-purple-500" /></td></tr>
-                       ) : purchaseLogs.filter(p => (p.title || '').toLowerCase().includes(purchaseLogTitleFilter.toLowerCase())).length === 0 ? (
+                       ) : purchaseLogs.length === 0 ? (
                           <tr><td colSpan={4} className="text-center py-8 text-zinc-500 text-sm">No records found.</td></tr>
-                       ) : purchaseLogs.filter(p => (p.title || '').toLowerCase().includes(purchaseLogTitleFilter.toLowerCase())).map((log, idx) => (
+                       ) : purchaseLogs.map((log, idx) => (
                          <tr key={idx} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
                            <td className="px-4 py-3 text-xs text-zinc-400 whitespace-nowrap">{formatDateTime(log.date)}</td>
                            <td className="px-4 py-3 font-bold text-blue-400 cursor-pointer hover:underline" onClick={() => {
@@ -4720,10 +4784,10 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                 
                 {/* Custom Load More Pagination for Limit(10) */}
                 <div className="mt-4 flex items-center justify-between bg-black/40 p-3 rounded-xl border border-zinc-800">
-                   <p className="text-xs text-zinc-500 font-bold">Showing Latest Logs {purchaseLogDateFilter && `for ${purchaseLogDateFilter}`}</p>
+                   <p className="text-xs text-zinc-500 font-bold">Showing Latest Logs</p>
                    <button 
                      disabled={!purchaseLogsHasMore || purchaseLogsLoading}
-                     onClick={() => fetchPurchaseLogs(true, purchaseLogDateFilter)}
+                     onClick={() => fetchPurchaseLogs(true, purchaseLogDateFrom, purchaseLogDateTo, purchaseLogTitleFilter)}
                      className="px-4 py-2 bg-purple-900/50 hover:bg-purple-800 text-purple-300 disabled:opacity-50 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-purple-900/50 shadow-inner"
                    >
                      {purchaseLogsLoading ? <RefreshCw className="w-3 h-3 animate-spin"/> : 'Load Next 10'}
