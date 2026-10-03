@@ -36,12 +36,12 @@ interface EpisodeData { epLabel: string; links: EpLink[]; releaseDateRaw?: strin
 interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; seriesType?: 'long' | 'mini'; updatedAt?: string; }
 
 // History tracking for usage and admin bonuses
-interface UserHistoryLog { id: string; type: 'usage' | 'admin_bonus' | 'buy_vip' | 'buy_ep'; title: string; amount: number; date: string; }
+interface UserHistoryLog { id: string; type: 'usage' | 'admin_bonus' | 'buy_vip' | 'buy_ep'; title: string; amount: number; date: string; remainingBalance?: number; }
 
 // User Data with createdAt, lastLoginAt, and pointHistory
 interface UserData { username: string; email: string; password?: string; role: 'admin' | 'user'; points: number; vip: boolean; unlockedShows: string[]; unlockedEpisodes?: string[]; createdAt?: string; lastLoginAt?: string; pointHistory?: UserHistoryLog[]; pointAdjustment?: number | string; }
 
-interface PointRequest { id: string; username: string; idCode: string; provider: string; date: string; status: 'pending' | 'approved' | 'rejected'; amount?: number; requestedAmount?: number; remark?: string; }
+interface PointRequest { id: string; username: string; idCode: string; provider: string; date: string; status: 'pending' | 'approved' | 'rejected'; amount?: number; requestedAmount?: number; remark?: string; remainingBalance?: number; }
 interface ContentItem { id: string; title_en: string; body_en: string; title_mm: string; body_mm: string; }
 interface PromoItem { id: string; title_en: string; body_en: string; title_mm: string; body_mm: string; image?: string; }
 interface SocialLink { id: string; platform: string; url: string; logo?: string; }
@@ -1221,7 +1221,8 @@ export default function SweetieWorldApp() {
             type: 'admin_bonus',
             title: pointDiff > 0 ? `Admin Added Points (${editUserRemark || 'No remark'})` : `Admin Deducted Points (${editUserRemark || 'No remark'})`,
             amount: pointDiff,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            remainingBalance: finalPoints
          };
          newPointHistory = [newLog, ...newPointHistory];
       }
@@ -1459,7 +1460,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
   let combinedHistory: any[] = [];
   if (userDetailModal) {
       const userReqs = pointRequests.filter(p => p.username === userDetailModal.username).map(r => ({
-          id: r.id, date: r.date, type: 'Deposit', paymentType: r.provider, txnId: r.idCode, amount: r.amount || r.requestedAmount, status: r.status, remark: r.remark
+          id: r.id, date: r.date, type: 'Deposit', paymentType: r.provider, txnId: r.idCode, amount: r.amount || r.requestedAmount, status: r.status, remark: r.remark, remainingBalance: r.remainingBalance
       }));
       const userBonus = (userDetailModal.pointHistory || []).map(b => {
           let displayTitle = b.title;
@@ -1470,7 +1471,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
           return {
               id: b.id, date: b.date, 
               type: b.type === 'admin_bonus' ? 'Admin Adjustment' : b.type === 'buy_vip' ? 'Buy VIP' : 'Usage',
-              paymentType: 'System', txnId: 'N/A', amount: b.amount, status: 'approved', remark: displayTitle
+              paymentType: 'System', txnId: 'N/A', amount: b.amount, status: 'approved', remark: displayTitle, remainingBalance: b.remainingBalance
           };
       });
       combinedHistory = [...userReqs, ...userBonus].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -2352,7 +2353,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     if (pSnap.exists() && pSnap.data().data) {
         latestReqs = pSnap.data().data;
     }
-    const updatedPointReqs = latestReqs.map((p): PointRequest => p.id === req.id ? { ...p, status: 'approved', amount } : p);
+    const updatedPointReqs = latestReqs.map((p): PointRequest => p.id === req.id ? { ...p, status: 'approved', amount, remainingBalance: updatedUser.points } : p);
 
     const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
     let latestNotis = notifications;
@@ -3798,13 +3799,14 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                              <th className="px-4 py-3">Method</th>
                              <th className="px-4 py-3">Txn ID</th>
                              <th className="px-4 py-3 text-right">Amount</th>
+                             <th className="px-4 py-3 text-right text-[#fcd385]">Balance</th>
                              <th className="px-4 py-3 text-center">Status</th>
                              <th className="px-4 py-3">Remark</th>
                           </tr>
                        </thead>
                        <tbody>
                          {paginatedUserHistory.length === 0 ? (
-                           <tr><td colSpan={7} className="text-center py-8 text-zinc-500">No records found.</td></tr>
+                           <tr><td colSpan={8} className="text-center py-8 text-zinc-500">No records found.</td></tr>
                          ) : paginatedUserHistory.map((h, i) => (
                            <tr key={i} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
                              <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(h.date)}</td>
@@ -3818,6 +3820,7 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
 
                              <td className="px-4 py-3 font-mono text-zinc-400">{h.txnId}</td>
                              <td className={`px-4 py-3 text-right font-bold ${h.amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{h.amount > 0 ? '+' : ''}{h.amount}</td>
+                             <td className="px-4 py-3 text-right font-black text-[#fcd385] tracking-wide">{h.remainingBalance !== undefined ? h.remainingBalance : '-'}</td>
                              <td className="px-4 py-3 text-center">
                                <span className={`px-2 py-1 rounded text-[9px] font-bold uppercase ${h.status === 'approved' ? 'bg-emerald-900/50 text-emerald-400' : h.status === 'rejected' ? 'bg-red-900/50 text-red-400' : 'bg-yellow-900/50 text-yellow-400'}`}>{h.status}</span>
                              </td>
@@ -4286,7 +4289,8 @@ trackMovieView(platformSelectModal.show.id);
                          type: 'buy_vip',
                          title: vipModalShow.title_mm || vipModalShow.title_en || 'VIP Unlock',
                          amount: -cost,
-                         date: new Date().toISOString()
+                         date: new Date().toISOString(),
+                         remainingBalance: currentUser.points - cost
                       };
 
                       const updatedUser = {
@@ -4366,7 +4370,7 @@ setCurrentUser(updatedUser);
                <button onClick={async () => {
    const cost = miniVipModalShow.show.pointsPerEp;
    if (currentUser.points >= cost) {
-                      const newLog: UserHistoryLog = { id: Date.now().toString(), type: 'buy_ep', title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`, amount: -cost, date: new Date().toISOString() };
+                      const newLog: UserHistoryLog = { id: Date.now().toString(), type: 'buy_ep', title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`, amount: -cost, date: new Date().toISOString(), remainingBalance: currentUser.points - cost };
                       const updatedUser = {
                          ...currentUser, points: currentUser.points - cost,
                          unlockedEpisodes: [...(currentUser.unlockedEpisodes || []), `${miniVipModalShow.show.id}_${miniVipModalShow.epIndex}`],
