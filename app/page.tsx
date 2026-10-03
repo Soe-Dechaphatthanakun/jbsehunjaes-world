@@ -378,8 +378,10 @@ export default function SweetieWorldApp() {
           let constraints: any[] = [];
           
           if (titleFilter.trim()) {
-              // Exact title search
-              constraints.push(where("title", "==", titleFilter.trim()));
+              // Prefix search (Starts with) - ဇာတ်ကားနာမည်အစ ရိုက်ထည့်ရုံနဲ့ ရှာပေးမည်
+              // Index Error မတက်စေရန် ဤနေရာတွင် orderBy("date") ကို ဖြုတ်ထားပါသည်
+              constraints.push(where("title", ">=", titleFilter.trim()));
+              constraints.push(where("title", "<=", titleFilter.trim() + '\uf8ff'));
           } else if (dateFrom && dateTo) {
               // Date Range search
               const fromD = new Date(dateFrom); fromD.setHours(0, 0, 0, 0);
@@ -391,15 +393,16 @@ export default function SweetieWorldApp() {
               constraints.push(orderBy("date", "desc"));
           }
           
-          // Calculate Total SUM (Cost: 1 Read Only) - only if we are applying a filter
+          // Calculate Total SUM (Cost: 1 Read Only)
           if (!isLoadMore && (titleFilter.trim() || (dateFrom && dateTo))) {
               try {
                   const baseQuery = query(collection(db, "PurchaseLogs"), ...constraints);
                   const sumSnap = await getAggregateFromServer(baseQuery, { total: sum('amount') });
-                  setPurchaseLogTotalSum(sumSnap.data().total || 0);
+                  // Point ဖြတ်တာကို အပေါင်းကိန်းဂဏန်းဖြင့် ပြရန် Math.abs သုံးထားပါသည်
+                  setPurchaseLogTotalSum(Math.abs(sumSnap.data().total || 0)); 
               } catch(e) { console.error("Aggregation Error", e); }
           } else if (!isLoadMore) {
-              setPurchaseLogTotalSum(null); // Hide sum if no filter
+              setPurchaseLogTotalSum(null); // Filter မလုပ်ထားရင် Sum ကို ဖျောက်ထားမည်
           }
 
           if (isLoadMore && purchaseLogsLastVisible) {
