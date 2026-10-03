@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment, startAfter, getAggregateFromServer, sum } from "firebase/firestore";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential, sendPasswordResetEmail } from "firebase/auth";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
   Globe, Menu, Home, HelpCircle, Gift, Info, Send, Phone,
@@ -1169,6 +1169,19 @@ export default function SweetieWorldApp() {
                 setAuthError(t.msgWrong);
             }
         }
+      } else if (authMode === 'forgot') {
+          // --- FORGOT PASSWORD စနစ်သစ် ---
+          const inputEmail = authForm.email.trim().toLowerCase();
+          if (!inputEmail) return setAuthError("ကျေးဇူးပြု၍ သင့် Email ကို ရိုက်ထည့်ပါ။");
+          
+          try {
+              await sendPasswordResetEmail(auth, inputEmail);
+              setAlertModal({ message: "Password အသစ်ချိန်းရန် Link အား သင့် Email သို့ ပို့ပေးလိုက်ပါသည်။ Email ဝင်စစ်ဆေးပါ။" });
+              setAuthMode('login');
+          } catch (error: any) {
+              console.error(error);
+              setAuthError("Email ရှာမတွေ့ပါ (သို့မဟုတ်) အင်တာနက် အားနည်းနေပါသည်။");
+          }
       }
     } catch (error) {
       console.error("Auth Error: ", error);
@@ -1783,13 +1796,16 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 
               {/* BIGGER POINTS BUTTON */}
               <button onClick={async () => {
-                if (currentUser?.role !== 'admin') {
-                   // 🌟 မိမိ Point History ကိုသာ Collection မှ သီးသန့်ဆွဲယူမည် (Bandwidth အလွန်သက်သာသွားပါမည်) 🌟
-                   const q = query(collection(db, "PointRequests"), where("username", "==", currentUser.username), orderBy("date", "desc"), limit(20));
-                   const pSnap = await getDocs(q);
-                   setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
+                if (currentUser?.role === 'admin') {
+                    // Admin ဆိုလျှင် Sync အရင်လုပ်မည်
+                    syncLatestData(); 
+                } else if (currentUser) {
+                    // User ဆိုလျှင် သူတို့၏ သီးသန့် Point History ကိုသာ ဆွဲယူမည် (Bandwidth သက်သာစေရန်)
+                    const q = query(collection(db, "PointRequests"), where("username", "==", currentUser.username), orderBy("date", "desc"), limit(20));
+                    const pSnap = await getDocs(q);
+                    setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
                 }
-                syncLatestData(); 
+                // ပြီးမှ Modal ပွင့်စေမည်
                 setPayStep('menu'); 
                 setPointModalOpen(true);
               }} className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border-2 border-[#fcd385] text-[#fcd385] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-sm sm:text-base font-black shadow-[0_0_10px_rgba(252,211,133,0.3)] hover:brightness-110 transition shrink-0">
@@ -4452,8 +4468,9 @@ trackMovieView(platformSelectModal.show.id);
 };
 
 const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
-setUsers(updatedUsersList);
-// ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
+// သင့် User လေးတစ်ယောက်တည်းကိုသာ Update လုပ်မည့်အစား Array တစ်ခုလုံးကိုပါ သေချာ Update လုပ်ပေးခြင်း
+const newlyUpdatedUsers = users.map(u => u.username === currentUser.username ? updatedUser : u);
+setUsers(newlyUpdatedUsers); 
 setDoc(doc(db, "Users", currentUser.username), updatedUser);
 setCurrentUser(updatedUser);
 
