@@ -323,6 +323,52 @@ export default function SweetieWorldApp() {
   const [pointsSpentSearch, setPointsSpentSearch] = useState('');
   const [userPointsSearch, setUserPointsSearch] = useState('');
   const [selectedMethodForDetail, setSelectedMethodForDetail] = useState<string | null>(null);
+  
+  // --- NEW: PurchaseLogs States & Fetch Logic ---
+  const [purchaseLogs, setPurchaseLogs] = useState<any[]>([]);
+  const [purchaseLogsLastVisible, setPurchaseLogsLastVisible] = useState<any>(null);
+  const [purchaseLogsHasMore, setPurchaseLogsHasMore] = useState(true);
+  const [purchaseLogsLoading, setPurchaseLogsLoading] = useState(false);
+  const [purchaseLogDateFilter, setPurchaseLogDateFilter] = useState('');
+  const [purchaseLogTitleFilter, setPurchaseLogTitleFilter] = useState('');
+
+  const fetchPurchaseLogs = async (isLoadMore = false, dateFilter = purchaseLogDateFilter) => {
+      if (isLoadMore && (!purchaseLogsLastVisible || !purchaseLogsHasMore)) return;
+      setPurchaseLogsLoading(true);
+      try {
+          let constraints: any[] = [];
+          if (dateFilter) {
+              const fromD = new Date(dateFilter); fromD.setHours(0, 0, 0, 0);
+              const toD = new Date(dateFilter); toD.setHours(23, 59, 59, 999);
+              constraints.push(where("date", ">=", fromD.toISOString()));
+              constraints.push(where("date", "<=", toD.toISOString()));
+          }
+          constraints.push(orderBy("date", "desc"));
+          
+          if (isLoadMore && purchaseLogsLastVisible) {
+              constraints.push(startAfter(purchaseLogsLastVisible));
+          }
+          constraints.push(limit(10)); // Limit 10 ထားရှိခြင်း
+
+          const finalQuery = query(collection(db, "PurchaseLogs"), ...constraints);
+          const snap = await getDocs(finalQuery);
+
+          if (!snap.empty) {
+              const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+              setPurchaseLogs(isLoadMore ? prev => [...prev, ...logs] : logs);
+              setPurchaseLogsLastVisible(snap.docs[snap.docs.length - 1]);
+              setPurchaseLogsHasMore(snap.docs.length === 10);
+          } else {
+              if (!isLoadMore) setPurchaseLogs([]);
+              setPurchaseLogsHasMore(false);
+          }
+      } catch (err) {
+          console.error("Fetch Error:", err);
+      } finally {
+          setPurchaseLogsLoading(false);
+      }
+  };
+
   // NEW: Promotion Popup State
   const [showWelcomePromo, setShowWelcomePromo] = useState(false);
 
@@ -1959,7 +2005,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                               <p className="text-2xl font-black text-[#fcd385]">{totalPoints.toLocaleString()} <span className="text-xs">PTS</span></p>
                            </div>
                            {/* NEW: Total Points Spent Card */}
-                           <div onClick={() => setShowPointsSpentModal(true)} className="bg-gradient-to-br from-purple-900/20 to-black p-4 rounded-xl border border-purple-500/30 shadow-lg cursor-pointer hover:border-purple-400 transition group">
+                           <div onClick={() => { setShowPointsSpentModal(true); setPurchaseLogDateFilter(''); setPurchaseLogTitleFilter(''); fetchPurchaseLogs(false, ''); }} className="bg-gradient-to-br from-purple-900/20 to-black p-4 rounded-xl border border-purple-500/30 shadow-lg cursor-pointer hover:border-purple-400 transition group">
                               <p className="text-xs text-purple-400/70 font-bold mb-1 group-hover:text-purple-300 transition">Total Points Spent</p>
                               <p className="text-2xl font-black text-purple-400">{totalPointsSpent.toLocaleString()} <span className="text-xs">PTS</span></p>
                            </div>
@@ -3782,10 +3828,53 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                          <input type="text" placeholder="Search by Method, Txn ID, Remark..." value={userDetailSearch} onChange={e => {setUserDetailSearch(e.target.value); setUserDetailHistoryPage(1);}} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" />
                        </div>
-                       <div className="flex items-center gap-2">
+                       <div className="flex flex-wrap items-center gap-2">
                          <input type="date" value={userDetailDateFrom} onChange={e => {setUserDetailDateFrom(e.target.value); setUserDetailHistoryPage(1);}} className="bg-black border border-zinc-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" />
                          <span className="text-zinc-500 text-xs">To</span>
                          <input type="date" value={userDetailDateTo} onChange={e => {setUserDetailDateTo(e.target.value); setUserDetailHistoryPage(1);}} className="bg-black border border-zinc-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" />
+                         
+                         {/* Bulk Delete Button for User History */}
+                         {(userDetailDateFrom && userDetailDateTo && combinedHistory.length > 0) && (
+                            <button onClick={() => {
+                               setConfirmModal({
+                                 message: `ရက်စွဲရွေးချယ်ထားသော မှတ်တမ်းပေါင်း (${combinedHistory.length}) ခု ကို ဖျက်ပစ်မည်မှာ သေချာပါသလား?`,
+                                 onConfirm: async () => {
+                                    const depositIdsToDelete = combinedHistory.filter(h => h.type === 'Deposit').map(h => h.id);
+                                    const otherIdsToDelete = combinedHistory.filter(h => h.type !== 'Deposit').map(h => h.id);
+
+                                    isSyncing.current = true; // Auto-sync ခဏပိတ်ထားမည်
+                                    try {
+                                        // ၁။ ငွေသွင်းမှတ်တမ်းများ (Deposit) ဖျက်ရန်
+                                        if (depositIdsToDelete.length > 0) {
+                                           const updatedReqs = pointRequests.filter(pr => !depositIdsToDelete.includes(pr.id));
+                                           setPointRequests(updatedReqs);
+                                           await setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs });
+                                        }
+
+                                        // ၂။ ဇာတ်ကားဝယ်ယူမှုနှင့် အခြားမှတ်တမ်းများ ဖျက်ရန်
+                                        if (otherIdsToDelete.length > 0 && userDetailModal) {
+                                           const updatedUserHistory = (userDetailModal.pointHistory || []).filter(ph => !otherIdsToDelete.includes(ph.id));
+                                           const updatedUser = { ...userDetailModal, pointHistory: updatedUserHistory };
+                                           setUserDetailModal(updatedUser);
+                                           setUsers(users.map(u => u.username === updatedUser.username ? updatedUser : u));
+                                           await setDoc(doc(db, "Users", updatedUser.username), updatedUser);
+                                        }
+
+                                        setUserDetailDateFrom('');
+                                        setUserDetailDateTo('');
+                                        showToast(`မှတ်တမ်း (${combinedHistory.length}) ခု ဖျက်သိမ်းပြီးပါပြီ`);
+                                    } catch (error) {
+                                        console.error("Delete Error:", error);
+                                        showToast("ဖျက်သိမ်းရာတွင် အမှားအယွင်းဖြစ်သွားပါသည်။");
+                                    } finally {
+                                        isSyncing.current = false;
+                                    }
+                                 }
+                               });
+                            }} className="bg-red-900/50 hover:bg-red-800 text-red-400 hover:text-white px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-red-900/50 sm:ml-2 shadow-inner">
+                               <Trash2 className="w-3 h-3"/> Delete {combinedHistory.length}
+                            </button>
+                         )}
                        </div>
                      </div>
                   </div>
@@ -4305,6 +4394,17 @@ setUsers(updatedUsersList);
 // ချက်ချင်း Database ပေါ် တိုက်ရိုက်သိမ်းမည်
 setDoc(doc(db, "Users", currentUser.username), updatedUser);
 setCurrentUser(updatedUser);
+
+// NEW: Save to separate PurchaseLogs Collection (1 Write Only)
+const logId = Date.now().toString();
+setDoc(doc(db, "PurchaseLogs", logId), {
+   id: logId,
+   username: currentUser.username,
+   type: 'buy_vip',
+   title: vipModalShow.title_mm || vipModalShow.title_en || 'VIP Unlock',
+   amount: cost,
+   date: new Date().toISOString()
+});
                       setVipModalShow(null);
                       showToast(t.msgVipSuccess);
 
@@ -4379,11 +4479,22 @@ setCurrentUser(updatedUser);
                       const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
                       setUsers(updatedUsersList);
                       setDoc(doc(db, "Users", currentUser.username), updatedUser);
-                      setCurrentUser(updatedUser);
-                      setMiniVipModalShow(null);
-                      showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
-                      
-                      showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
+setCurrentUser(updatedUser);
+
+// NEW: Save to separate PurchaseLogs Collection (1 Write Only)
+const logId = Date.now().toString();
+setDoc(doc(db, "PurchaseLogs", logId), {
+   id: logId,
+   username: currentUser.username,
+   type: 'buy_ep',
+   title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`,
+   amount: cost,
+   date: new Date().toISOString()
+});
+
+setMiniVipModalShow(null);
+showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
+                                          
 
                       const token = Math.random().toString(36).substring(2, 12);
 await setDoc(doc(db, "Users", currentUser.username), { 
@@ -4516,22 +4627,65 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
         </div>
       )}
 
-      {/* --- NEW: POINTS SPENT HISTORY MODAL --- */}
+      {/* --- NEW: POINTS SPENT HISTORY MODAL (WITH PURCHASE LOGS) --- */}
       {showPointsSpentModal && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-sans">
           <div className="bg-gradient-to-b from-[#2b0303] to-[#161616] border border-purple-500/30 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.9)] relative overflow-hidden">
              <div className="p-5 border-b border-purple-900/50 flex justify-between items-center bg-black/40">
-               <h2 className="text-xl font-black text-purple-400 flex items-center gap-2"><ListVideo className="w-5 h-5"/> VIP Unlock History (Points Spent)</h2>
-               <button onClick={() => {setShowPointsSpentModal(false); setPointsSpentSearch('');}} className="text-zinc-400 hover:text-white transition"><X className="w-6 h-6"/></button>
+               <h2 className="text-xl font-black text-purple-400 flex items-center gap-2"><ListVideo className="w-5 h-5"/> VIP Purchase Logs</h2>
+               <button onClick={() => setShowPointsSpentModal(false)} className="text-zinc-400 hover:text-white transition"><X className="w-6 h-6"/></button>
              </div>
              
-             <div className="p-4 border-b border-zinc-800 bg-black/20">
-               <div className="relative w-full max-w-md">
-                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                 <input type="text" placeholder="Search by Username..." value={pointsSpentSearch} onChange={e => {setPointsSpentSearch(e.target.value); setPointsSpentPage(1);}} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500" />
+             {/* Filter & Safe Bulk Delete Section */}
+             <div className="p-4 border-b border-zinc-800 bg-black/20 flex flex-wrap gap-4 items-center justify-between">
+               <div className="flex items-center gap-2 flex-wrap flex-1">
+                 <div className="relative w-full sm:w-64">
+                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                   <input type="text" placeholder="Search Movie Title..." value={purchaseLogTitleFilter} onChange={e => setPurchaseLogTitleFilter(e.target.value)} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500" />
+                 </div>
+                 <div className="flex items-center gap-2">
+                   <input type="date" value={purchaseLogDateFilter} onChange={e => {
+                       setPurchaseLogDateFilter(e.target.value);
+                       fetchPurchaseLogs(false, e.target.value);
+                   }} className="bg-black border border-zinc-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 cursor-pointer" />
+                   <button onClick={() => { setPurchaseLogDateFilter(''); setPurchaseLogTitleFilter(''); fetchPurchaseLogs(false, ''); }} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg font-bold transition shadow border border-zinc-700">Clear</button>
+                 </div>
                </div>
+
+               {/* Delete by Date Button */}
+               {(purchaseLogDateFilter) && (
+                 <button onClick={() => {
+                     setConfirmModal({
+                       message: `${purchaseLogDateFilter} ရက်နေ့ရှိ ဝယ်ယူမှုမှတ်တမ်း (ဘေလ်ဖြတ်ပိုင်း) များကိုသာ ဖျက်ပစ်မည်မှာ သေချာပါသလား? (မှတ်ချက် - User များ၏ ဇာတ်ကားကြည့်ခွင့် VIP များ လုံးဝ ပျက်သွားမည် မဟုတ်ပါ)`,
+                       onConfirm: async () => {
+                           isSyncing.current = true;
+                           try {
+                               const fromD = new Date(purchaseLogDateFilter); fromD.setHours(0, 0, 0, 0);
+                               const toD = new Date(purchaseLogDateFilter); toD.setHours(23, 59, 59, 999);
+                               const delQuery = query(collection(db, "PurchaseLogs"), where("date", ">=", fromD.toISOString()), where("date", "<=", toD.toISOString()));
+                               const snap = await getDocs(delQuery);
+                               
+                               // Batch Delete Only For that specific Date
+                               const deletePromises = snap.docs.map(d => deleteDoc(doc(db, "PurchaseLogs", d.id)));
+                               await Promise.all(deletePromises);
+                               
+                               showToast(`မှတ်တမ်း ${snap.docs.length} ခု အောင်မြင်စွာ ဖျက်သိမ်းပြီးပါပြီ။`);
+                               fetchPurchaseLogs(false, purchaseLogDateFilter);
+                           } catch (error) {
+                               console.error(error);
+                               showToast("ဖျက်သိမ်းရာတွင် အမှားအယွင်းရှိနေပါသည်။");
+                           } finally {
+                               isSyncing.current = false;
+                           }
+                       }
+                     });
+                 }} className="bg-red-900/50 hover:bg-red-800 text-red-400 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-red-900/50 shadow-inner">
+                    <Trash2 className="w-4 h-4"/> Delete Data ({purchaseLogDateFilter})
+                 </button>
+               )}
              </div>
 
+             {/* Table Section */}
              <div className="p-5 overflow-y-auto custom-scrollbar flex-1 flex flex-col">
                 <div className="overflow-x-auto bg-black/20 rounded-xl border border-zinc-800 shadow-inner">
                    <table className="w-full text-left text-sm text-zinc-300 min-w-[700px]">
@@ -4544,14 +4698,15 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                         </tr>
                      </thead>
                      <tbody>
-                       {paginatedPointsSpentLogs.length === 0 ? (
+                       {purchaseLogsLoading && purchaseLogs.length === 0 ? (
+                          <tr><td colSpan={4} className="text-center py-10"><RefreshCw className="w-5 h-5 animate-spin mx-auto text-purple-500" /></td></tr>
+                       ) : purchaseLogs.filter(p => (p.title || '').toLowerCase().includes(purchaseLogTitleFilter.toLowerCase())).length === 0 ? (
                           <tr><td colSpan={4} className="text-center py-8 text-zinc-500 text-sm">No records found.</td></tr>
-                       ) : paginatedPointsSpentLogs.map((log, idx) => (
+                       ) : purchaseLogs.filter(p => (p.title || '').toLowerCase().includes(purchaseLogTitleFilter.toLowerCase())).map((log, idx) => (
                          <tr key={idx} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
                            <td className="px-4 py-3 text-xs text-zinc-400 whitespace-nowrap">{formatDateTime(log.date)}</td>
                            <td className="px-4 py-3 font-bold text-blue-400 cursor-pointer hover:underline" onClick={() => {
                                setShowPointsSpentModal(false);
-                               setPointsSpentSearch('');
                                const user = users.find(u => u.username === log.username);
                                if(user) setUserDetailModal(user);
                            }}>{log.username}</td>
@@ -4562,9 +4717,17 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                      </tbody>
                    </table>
                 </div>
-                {/* Pagination For VIP History */}
-                <div className="mt-4">
-                   {pointsSpentLogs.length > 0 && renderPagination(pointsSpentPage, setPointsSpentPage, pointsSpentPerPage, setPointsSpentPerPage, pointsSpentLogs.length)}
+                
+                {/* Custom Load More Pagination for Limit(10) */}
+                <div className="mt-4 flex items-center justify-between bg-black/40 p-3 rounded-xl border border-zinc-800">
+                   <p className="text-xs text-zinc-500 font-bold">Showing Latest Logs {purchaseLogDateFilter && `for ${purchaseLogDateFilter}`}</p>
+                   <button 
+                     disabled={!purchaseLogsHasMore || purchaseLogsLoading}
+                     onClick={() => fetchPurchaseLogs(true, purchaseLogDateFilter)}
+                     className="px-4 py-2 bg-purple-900/50 hover:bg-purple-800 text-purple-300 disabled:opacity-50 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-purple-900/50 shadow-inner"
+                   >
+                     {purchaseLogsLoading ? <RefreshCw className="w-3 h-3 animate-spin"/> : 'Load Next 10'}
+                   </button>
                 </div>
              </div>
           </div>
