@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment, startAfter, getAggregateFromServer, sum } from "firebase/firestore";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
   Globe, Menu, Home, HelpCircle, Gift, Info, Send, Phone,
@@ -27,6 +28,7 @@ const firebaseConfig = {
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
+const auth = getAuth(app); // သီးသန့်လုံခြုံသော Login စနစ်အတွက်
 
 // ------------------------------------------------------------------
 // INTERFACES & TYPES
@@ -1061,147 +1063,108 @@ export default function SweetieWorldApp() {
         const inputUsername = authForm.username.trim();
         const inputEmail = authForm.email.trim().toLowerCase();
         
+        // ၁။ Username ကို Database တွင် ရှိ/မရှိ အရင်စစ်မည်
         const usernameSnap = await getDoc(doc(db, "Users", inputUsername));
         if (usernameSnap.exists()) return setAuthError(t.msgExists);
         
-        const emailQuery = query(collection(db, "Users"), where("email", "==", inputEmail));
-        const emailSnap = await getDocs(emailQuery);
-        if (!emailSnap.empty) return setAuthError(t.msgExists);
-        
-        const newUser: UserData = { 
-          ...authForm, username: inputUsername, email: inputEmail, role: 'user', points: 0, vip: false, unlockedShows: [],
-          createdAt: new Date().toISOString(),
-          lastLoginAt: new Date().toISOString(),
-          pointHistory: []
-        };
+        try {
+           // ၂။ Firebase Auth ဖြင့် လုံခြုံစွာ အကောင့်ဖွင့်မည် (Password ကို Database တွင် အတိုင်းသား မသိမ်းတော့ပါ)
+           await createUserWithEmailAndPassword(auth, inputEmail, authForm.password);
+           
+           const newUser: UserData = { 
+             username: inputUsername, email: inputEmail, role: 'user', points: 0, vip: false, unlockedShows: [],
+             createdAt: new Date().toISOString(), lastLoginAt: new Date().toISOString(), pointHistory: []
+           }; 
 
-        const newNoti: NotificationData = {
-          id: Date.now().toString()+'_noti', targetUser: 'admin',
-          message: `New User Registered: ${newUser.username}`, detail: `Email: ${newUser.email}`,
-          date: new Date().toISOString(), isRead: false, actionType: 'new_user'
-        };
-        setNotifications([newNoti, ...notifications]);
-
-        setUsers([newUser]); 
-        
-        try { 
-          // Database ထဲ အောင်မြင်စွာ ဝင်သွားမှသာ အောက်ကအဆင့်တွေကို ဆက်လုပ်ပါမည်
-          await setDoc(doc(db, "Users", newUser.username), newUser); 
-          
-          setCurrentUser(newUser);
-          if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
-          else localStorage.removeItem('jbsehunjaes_auth');
-          
-          showToast(t.msgSuccess);
-          setAuthModalOpen(false);
-          setAuthForm({ username: '', email: '', password: '' });
-          setShowAuthPassword(false);
-          setShowWelcomePromo(true);
-          
-        } catch (dbError) { 
-          console.error("Firebase saving error: ", dbError); 
-          // Error တက်ခဲ့ရင် ရှေ့ဆက်မလုပ်ဘဲ တားထားလိုက်ပါမည်
-          setAuthError("အကောင့်ဖွင့်ရာတွင် အမှားအယွင်းဖြစ်သွားပါသည်။ အင်တာနက် (သို့) Username ကို ပြန်စစ်ပါ။");
-          return; // 👈 ချက်ချင်းရပ်ပစ်မည်
+           await setDoc(doc(db, "Users", newUser.username), newUser); 
+           
+           setCurrentUser(newUser);
+           if (rememberMe) localStorage.setItem('jbsehunjaes_auth', newUser.username);
+           else localStorage.removeItem('jbsehunjaes_auth');
+           
+           showToast(t.msgSuccess);
+           setAuthModalOpen(false);
+           setAuthForm({ username: '', email: '', password: '' });
+           setShowWelcomePromo(true);
+           
+        } catch (error: any) {
+           console.error(error);
+           setAuthError("Email အသုံးပြုပြီးသားဖြစ်နေပါသည် (သို့) အင်တာနက် အားနည်းနေပါသည်။");
         }
         
       } else if (authMode === 'login') {
         const rawInput = authForm.username.trim();
         const lowerInput = rawInput.toLowerCase();
-        let userDoc = null;
-        let isFromOldDb = false;
-        
-        // ၁။ System အသစ် (Users Collection) တွင် အရင်ရှာမည်
-        if (lowerInput.includes('@')) {
-            const emailQuery = query(collection(db, "Users"), where("email", "==", lowerInput));
-            const emailSnap = await getDocs(emailQuery);
-            if (!emailSnap.empty) userDoc = emailSnap.docs[0].data() as UserData;
-        } else {
-            const docSnap = await getDoc(doc(db, "Users", rawInput));
-            if (docSnap.exists()) {
-                userDoc = docSnap.data() as UserData;
-            } else {
-                const uQuery = query(collection(db, "Users"), where("username", "==", rawInput));
-                const uSnap = await getDocs(uQuery);
-                if (!uSnap.empty) userDoc = uSnap.docs[0].data() as UserData;
-            }
-        }
-        
-        // ၂။ System အသစ်မှာ မတွေ့ရင် Database အဟောင်း (SiteData/users) တွင် သွားရှာပြီး Auto-Migrate လုပ်ပေးမည်
-        if (!userDoc) {
-            const oldDbSnap = await getDoc(doc(db, "SiteData", "users"));
-            if (oldDbSnap.exists() && Array.isArray(oldDbSnap.data().data)) {
-                const oldUsers = oldDbSnap.data().data;
-                const foundOldUser = oldUsers.find((u: UserData) => 
-                    (u.username?.trim().toLowerCase() === lowerInput || u.email?.trim().toLowerCase() === lowerInput)
-                );
-                if (foundOldUser) {
-                    userDoc = foundOldUser;
-                    isFromOldDb = true;
-                }
-            }
-        }
+        let userEmailForAuth = lowerInput;
 
-        // ၃။ Password မှန်/မမှန် စစ်ဆေးမည်
-        if (userDoc && String(userDoc.password) === authForm.password.trim()) {
-          const updatedUser = { ...userDoc, lastLoginAt: new Date().toISOString() };
-          setUsers([updatedUser]); 
-          
-          try { 
-              // အကောင့်ကို System အသစ်ပေါ်သို့ အမြဲတမ်း Save ပေးမည် (Database ပြောင်းရွှေ့ခြင်း ပြီးစီးပါမည်)
-              await setDoc(doc(db, "Users", updatedUser.username), updatedUser); 
-              
-              // အဟောင်းထဲကနေ ယူလာတာဆိုရင် အဟောင်းထဲကနေ ဖျက်ပစ်မည်
-              if (isFromOldDb) {
-                  const oldDbSnap = await getDoc(doc(db, "SiteData", "users"));
-                  if (oldDbSnap.exists() && Array.isArray(oldDbSnap.data().data)) {
-                      const remainingOldUsers = oldDbSnap.data().data.filter((u: UserData) => u.username !== updatedUser.username);
-                      await setDoc(doc(db, "SiteData", "users"), { data: remainingOldUsers });
-                  }
-              }
-          } catch (dbError) { console.error("Firebase saving error: ", dbError); }
-
-          setCurrentUser(updatedUser);
-          if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
-          else localStorage.removeItem('jbsehunjaes_auth');
-          
-          showToast(t.msgLoginSucc);
-          setAuthModalOpen(false);
-          setAuthForm({ username: '', email: '', password: '' });
-          setShowAuthPassword(false);
-          setShowWelcomePromo(true);
-        } else {
-          setAuthError(t.msgWrong);
-        }
-        
-      } else if (authMode === 'forgot') {
-        const rawInput = authForm.username.trim();
-        const lowerEmail = authForm.email.trim().toLowerCase();
-        let foundPwd = null;
-
-        // System အသစ်တွင်ရှာမည်
-        const docSnap = await getDoc(doc(db, "Users", rawInput));
-        if (docSnap.exists() && docSnap.data().email.toLowerCase() === lowerEmail) {
-           foundPwd = docSnap.data().password;
-        } else {
-           // System အဟောင်းတွင်ရှာမည်
-           const oldDbSnap = await getDoc(doc(db, "SiteData", "users"));
-           if (oldDbSnap.exists() && Array.isArray(oldDbSnap.data().data)) {
-               const oldUser = oldDbSnap.data().data.find((u: UserData) => u.username?.toLowerCase() === rawInput.toLowerCase() && u.email?.toLowerCase() === lowerEmail);
-               if (oldUser) foundPwd = oldUser.password;
+        // Email မဟုတ်ဘဲ Username ဖြင့် ဝင်ခဲ့လျှင် Email ကို အရင်ရှာမည်
+        if (!lowerInput.includes('@')) {
+           const docSnap = await getDoc(doc(db, "Users", rawInput));
+           if (docSnap.exists()) {
+               userEmailForAuth = docSnap.data().email;
+           } else {
+               return setAuthError(t.msgWrong);
            }
         }
 
-        if (foundPwd) {
-           setAlertModal({ message: `Password: ${foundPwd}` });
-           setAuthMode('login');
-        } else {
-           setAuthError(t.msgWrong);
+        try {
+           // Firebase Auth ဖြင့် လုံခြုံစွာ Login ဝင်မည်
+           await signInWithEmailAndPassword(auth, userEmailForAuth, authForm.password);
+           
+           // အောင်မြင်ပါက Database မှ User အချက်အလက်များကို ဆွဲယူမည်
+           let userDoc;
+           if (lowerInput.includes('@')) {
+               const emailQuery = query(collection(db, "Users"), where("email", "==", lowerInput));
+               const emailSnap = await getDocs(emailQuery);
+               if (!emailSnap.empty) userDoc = emailSnap.docs[0].data() as UserData;
+           } else {
+               const docSnap = await getDoc(doc(db, "Users", rawInput));
+               if (docSnap.exists()) userDoc = docSnap.data() as UserData;
+           }
+
+           if (userDoc) {
+               const updatedUser = { ...userDoc, lastLoginAt: new Date().toISOString() };
+               await setDoc(doc(db, "Users", updatedUser.username), updatedUser);
+               setCurrentUser(updatedUser);
+               if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
+               showToast(t.msgLoginSucc);
+               setAuthModalOpen(false);
+               setAuthForm({ username: '', email: '', password: '' });
+               setShowWelcomePromo(true);
+           }
+        } catch (error: any) {
+            // 🌟 ဤနေရာသည် အရေးကြီးပါသည်။ (User အဟောင်းများကို System အသစ်သို့ Auto ပြောင်းပေးမည့် နေရာဖြစ်သည်)
+            const docSnap = await getDoc(doc(db, "Users", rawInput));
+            if (docSnap.exists() && docSnap.data().password === authForm.password) {
+                try {
+                    // Firebase Auth ထဲသို့ အသစ်ထည့်သွင်းပေးမည် 
+                    await createUserWithEmailAndPassword(auth, docSnap.data().email, authForm.password);
+                    
+                    // TS Error 1, 2, 3 မတက်စေရန် အောက်ပါအတိုင်း ပြင်ရေးပါသည်
+                    const userData = docSnap.data() as UserData;
+                    const { password, ...restData } = userData; // password ကို ဘေးဖယ်ထုတ်လိုက်ပါသည်
+                    
+                    const updatedUser: UserData = { 
+                        ...restData, 
+                        lastLoginAt: new Date().toISOString() 
+                    };
+                    
+                    await setDoc(doc(db, "Users", rawInput), updatedUser);
+                    
+                    setCurrentUser(updatedUser);
+                    if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
+                    showToast(t.msgLoginSucc);
+                    setAuthModalOpen(false);
+                } catch (e) {
+                    setAuthError("အကောင့်လုံခြုံရေး အဆင့်မြှင့်တင်ရာတွင် အမှားအယွင်းရှိနေပါသည်။");
+                }
+            } else {
+                setAuthError(t.msgWrong);
+            }
         }
       }
     } catch (error) {
-      console.error("Authentication Runtime Error: ", error);
-      setAuthError("Runtime Error occurred. Please refresh the page.");
+      console.error("Auth Error: ", error);
     }
   };
 
@@ -1252,24 +1215,14 @@ export default function SweetieWorldApp() {
         date: new Date().toISOString(), isRead: false, actionType: 'point_request'
       };
       
-      // --- ၃။ Noti များကိုလည်း နောက်ဆုံးအခြေအနေကို ဆွဲယူမည် ---
-      let latestNotis = notifications;
-      const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
-      if (nSnap.exists() && nSnap.data().data) {
-          latestNotis = nSnap.data().data;
-      }
-
-      const updatedNotis = [newNoti, ...latestNotis];
-      const updatedReqs = [newReq, ...latestReqs];
+      setNotifications([newNoti, ...notifications]);
+      setPointRequests([newReq, ...pointRequests]);
       
-      setNotifications(updatedNotis);
-      setPointRequests(updatedReqs);
-      
-      // --- ၄။ Database သို့ ပြန်လည် သိမ်းဆည်းမည် (အခြားသူများ၏ Request များ အဖုံးမခံရတော့ပါ) ---
+      // 🌟 Array အထုပ်ကြီးထဲ သိမ်းမည့်အစား Collection အသစ်များထဲသို့ Document တစ်ခုချင်းစီ ခွဲသိမ်းပါမည် (Bandwidth သက်သာစေရန်)
       await Promise.all([
-    setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis }),
-    setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedReqs })
-]);
+         setDoc(doc(db, "Notifications", newNoti.id), newNoti),
+         setDoc(doc(db, "PointRequests", newReq.id), newReq)
+      ]);
 
       showToast(t.msgPointSent);
       setIdCodeInput('');
@@ -1790,12 +1743,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 
               {/* BIGGER POINTS BUTTON */}
               <button onClick={async () => {
-                // 🌟 On-Demand Fetch: ခလုတ်နှိပ်မှသာ History ကို လှမ်းဆွဲမည် (Bandwidth ကာကွယ်ရန်) 🌟
                 if (currentUser?.role !== 'admin') {
-                   const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
-                   if (pSnap.exists() && pSnap.data().data) {
-                      setPointRequests(pSnap.data().data);
-                   }
+                   // 🌟 မိမိ Point History ကိုသာ Collection မှ သီးသန့်ဆွဲယူမည် (Bandwidth အလွန်သက်သာသွားပါမည်) 🌟
+                   const q = query(collection(db, "PointRequests"), where("username", "==", currentUser.username), orderBy("date", "desc"), limit(20));
+                   const pSnap = await getDocs(q);
+                   setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
                 }
                 syncLatestData(); 
                 setPayStep('menu'); 
@@ -2449,13 +2401,21 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     // (UI ပေါ်ရှိ Local Users State တွင် ပါဝင်နေပါက Update လုပ်ပေးမည်)
     setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUser : u));
 
-    // ၂။ Request နှင့် Noti များကို နောက်ဆုံး Database အခြေအနေနှင့် ပေါင်းပြီး Update လုပ်မည်
-    const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
-    let latestReqs = pointRequests;
-    if (pSnap.exists() && pSnap.data().data) {
-        latestReqs = pSnap.data().data;
-    }
-    const updatedPointReqs = latestReqs.map((p): PointRequest => p.id === req.id ? { ...p, status: 'approved', amount, remainingBalance: updatedUser.points } : p);
+    // ၂။ PointRequests Collection ရှိ သက်ဆိုင်ရာ Document တစ်ခုတည်းကိုသာ Update လုပ်မည်
+    // 💡 Error 4 ပြင်ရန် ( : PointRequest ထည့်ပေးပါသည် )
+    const updatedReq: PointRequest = { 
+        ...req, 
+        status: 'approved', 
+        amount: amount, 
+        remainingBalance: updatedUser.points 
+    };
+    
+    await setDoc(doc(db, "PointRequests", req.id), updatedReq);
+    await setDoc(doc(db, "Notifications", newNoti.id), newNoti);
+
+    // Local UI ပြောင်းလဲခြင်း
+    setPointRequests(prev => prev.map(p => p.id === req.id ? updatedReq : p));
+    setNotifications(prev => [newNoti, ...prev]);
 
     const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
     let latestNotis = notifications;
@@ -2464,12 +2424,9 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     }
     const updatedNotis = [newNoti, ...latestNotis];
 
-    setPointRequests(updatedPointReqs);
+    // 💡 Error 5 ပြင်ရန် ( updatedPointReqs မရှိတော့သဖြင့် ဖြုတ်လိုက်ပါသည် )
     setNotifications(updatedNotis);
 
-    // ၃။ Firebase သို့ အပြီးသတ် Save မည်
-    await setDoc(doc(db, "SiteData", "pointRequests"), { data: updatedPointReqs });
-    await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
 
     showToast(`${amount} ${t.msgApproved}`);
   } catch (error) {
