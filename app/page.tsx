@@ -1796,18 +1796,23 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 
               {/* BIGGER POINTS BUTTON */}
               <button onClick={async () => {
-                if (currentUser?.role === 'admin') {
-                    // Admin ဆိုလျှင် Sync အရင်လုပ်မည်
-                    syncLatestData(); 
-                } else if (currentUser) {
-                    // User ဆိုလျှင် သူတို့၏ သီးသန့် Point History ကိုသာ ဆွဲယူမည် (Bandwidth သက်သာစေရန်)
-                    const q = query(collection(db, "PointRequests"), where("username", "==", currentUser.username), orderBy("date", "desc"), limit(20));
-                    const pSnap = await getDocs(q);
-                    setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
+                try {
+                  if (currentUser?.role === 'admin') {
+                      // Admin ဆိုလျှင် Sync အရင်လုပ်မည်
+                      syncLatestData(); 
+                  } else if (currentUser) {
+                      // User ဆိုလျှင် သူတို့၏ သီးသန့် Point History ကိုသာ ဆွဲယူမည်
+                      const q = query(collection(db, "PointRequests"), where("username", "==", currentUser.username), orderBy("date", "desc"), limit(20));
+                      const pSnap = await getDocs(q);
+                      setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
+                  }
+                } catch (error) {
+                  console.error("Point History Fetch Error:", error);
+                } finally {
+                  // Error တက်သည်ဖြစ်စေ၊ မတက်သည်ဖြစ်စေ Point Box ကို မဖြစ်မနေ ပွင့်စေမည်
+                  setPayStep('menu'); 
+                  setPointModalOpen(true);
                 }
-                // ပြီးမှ Modal ပွင့်စေမည်
-                setPayStep('menu'); 
-                setPointModalOpen(true);
               }} className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border-2 border-[#fcd385] text-[#fcd385] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-sm sm:text-base font-black shadow-[0_0_10px_rgba(252,211,133,0.3)] hover:brightness-110 transition shrink-0">
                 <Coins className="w-5 h-5 sm:w-5 sm:h-5 text-yellow-400" /> <span>{currentUser.points} {t.pts}</span>
               </button>
