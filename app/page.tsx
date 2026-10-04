@@ -1801,10 +1801,26 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                       // Admin ဆိုလျှင် Sync အရင်လုပ်မည်
                       syncLatestData(); 
                   } else if (currentUser) {
-                      // User ဆိုလျှင် သူတို့၏ သီးသန့် Point History ကိုသာ ဆွဲယူမည်
-                      const q = query(collection(db, "PointRequests"), where("username", "==", currentUser.username), orderBy("date", "desc"), limit(20));
+                      // --- အသစ်ပြင်ဆင်ထားသော အပိုင်း စတင်ပါပြီ ---
+                      
+                      // ၁။ User ရဲ့ နောက်ဆုံး Point Balance ကို (1 Read ဖြင့်သာ) ချက်ချင်းလှမ်းဆွဲပြီး Update လုပ်မည် (Refresh လုပ်စရာမလိုတော့ပါ)
+                      const uSnap = await getDoc(doc(db, "Users", currentUser.username));
+                      if (uSnap.exists()) {
+                          setCurrentUser(uSnap.data() as UserData);
+                      }
+
+                      // ၂။ Point History ဆွဲမည် (Firebase Index Error မတက်စေရန် orderBy ကိုဖြုတ်ပြီး Client ဘက်တွင် လုံခြုံစွာ Sort လုပ်မည်)
+                      const q = query(collection(db, "PointRequests"), where("username", "==", currentUser.username));
                       const pSnap = await getDocs(q);
-                      setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
+                      
+                      const userHistory = pSnap.docs.map(d => d.data() as PointRequest);
+                      // ရက်စွဲအလိုက် အသစ်ဆုံးကို အပေါ်ထားရန် Sort လုပ်မည်
+                      userHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                      
+                      // နောက်ဆုံး ၂၀ ခုကိုသာ ယူပြီး State ထဲထည့်မည်
+                      setPointRequests(userHistory.slice(0, 20));
+                      
+                      // --- အသစ်ပြင်ဆင်ထားသော အပိုင်း ပြီးဆုံးပါပြီ ---
                   }
                 } catch (error) {
                   console.error("Point History Fetch Error:", error);
