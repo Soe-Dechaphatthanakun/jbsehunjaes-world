@@ -4914,3 +4914,4 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
     </div>
   );
 }
+
