@@ -752,10 +752,7 @@ export default function SweetieWorldApp() {
          }
       }
       
-      const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
-      if (mvSnap.exists() && mvSnap.data().data) {
-         setMovieViews(prev => JSON.stringify(prev) !== JSON.stringify(mvSnap.data().data) ? mvSnap.data().data : prev);
-      }
+      
     } catch(e) {
       console.error("Sync error:", e);
     } finally {
@@ -841,27 +838,6 @@ export default function SweetieWorldApp() {
      return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
-  useEffect(() => {
-    if (isInitialLoad) return;
-    let interval: any;
-    if (currentUser?.role === 'admin') {
-       interval = setInterval(() => { syncLatestData(); }, 2000000); 
-    }
-    let lastFocusSync = 0;
-    const handleFocus = () => { 
-        const now = Date.now();
-        // Admin ဖြစ်မှသာလျှင် ၅ မိနစ်တစ်ခါ Auto Sync လုပ်စေမည် (User များအတွက် Read သက်သာစေရန်)
-        if (now - lastFocusSync > 300000 && currentUser?.role === 'admin') { 
-            syncLatestData(); 
-            lastFocusSync = now;
-        }
-    };
-    window.addEventListener('focus', handleFocus);
-    return () => {
-       if (interval) clearInterval(interval);
-       window.removeEventListener('focus', handleFocus);
-    };
-  }, [isInitialLoad, currentUser?.role]);
 
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "categories"), { data: categories }), 2000); return () => clearTimeout(t); } }, [categories, currentUser?.role]);
   useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "platforms"), { data: platforms }), 2000); return () => clearTimeout(t); } }, [platforms, currentUser?.role]);
@@ -1226,21 +1202,19 @@ export default function SweetieWorldApp() {
     }
   };
 
-  const handlePointSubmit = async (e: React.FormEvent) => {
+ const handlePointSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !selectedProvider || !idCodeInput.trim() || !amountInput.trim()) return;
 
     try {
-      // --- ၁။ Database ပေါ်ရှိ နောက်ဆုံး Point Requests ကို အရင်လှမ်းဆွဲမည် ---
-      let latestReqs = pointRequests;
-      const pSnap = await getDoc(doc(db, "SiteData", "pointRequests"));
-      if (pSnap.exists() && pSnap.data().data) {
-         latestReqs = pSnap.data().data;
+      // --- ၁။ Database ပေါ်ရှိ Point Requests Collection တွင် Duplicate ဖြစ်/မဖြစ် အတိအကျလှမ်းစစ်မည် (1 Read သာကုန်ကျမည်) ---
+      const checkQuery = query(collection(db, "PointRequests"), where("idCode", "==", idCodeInput.trim()));
+      const checkSnap = await getDocs(checkQuery);
+      
+      // အကယ်၍ ဒီ ID နဲ့ တောင်းဆိုထားတာ ရှိနှင့်ပြီးသားဆိုရင် (Duplicate ဖြစ်ရင်)
+      if (!checkSnap.empty) {
+         return setAlertModal({ message: t.duplicateId });
       }
-
-      // --- ၂။ Duplicate ဖြစ်မဖြစ် စစ်ဆေးမည် ---
-      const isDuplicate = latestReqs.some((r: PointRequest) => r.idCode.trim().toLowerCase() === idCodeInput.trim().toLowerCase());
-      if (isDuplicate) return setAlertModal({ message: t.duplicateId });
 
       const newReq: PointRequest = {
         id: Date.now().toString(), username: currentUser.username, provider: selectedProvider.name,
@@ -1256,7 +1230,7 @@ export default function SweetieWorldApp() {
       setNotifications([newNoti, ...notifications]);
       setPointRequests([newReq, ...pointRequests]);
       
-      // 🌟 Array အထုပ်ကြီးထဲ သိမ်းမည့်အစား Collection အသစ်များထဲသို့ Document တစ်ခုချင်းစီ ခွဲသိမ်းပါမည် (Bandwidth သက်သာစေရန်)
+      // 🌟 Database သို့ သိမ်းဆည်းခြင်း (Collection အမှန်ထဲသို့သာ တိုက်ရိုက်သိမ်းမည်)
       await Promise.all([
          setDoc(doc(db, "Notifications", newNoti.id), newNoti),
          setDoc(doc(db, "PointRequests", newReq.id), newReq)
@@ -1348,14 +1322,12 @@ export default function SweetieWorldApp() {
          const newLog: AdminLogData = { id: Date.now().toString()+'_log', adminName: currentUser.username, targetUser: editUserForm.username.trim(), action: 'Edit User Profile', remark: editUserRemark.trim(), date: new Date().toISOString() };
          const newNoti: NotificationData = { id: Date.now().toString()+'_noti', targetUser: editUserForm.username.trim(), message: `Admin မှ သင့်အကောင့်အား ပြင်ဆင်မှုပြုလုပ်ခဲ့ပါသည်။ (Admin Action)`, detail: editUserRemark.trim(), date: new Date().toISOString(), isRead: false, actionType: 'admin_edit' };
          
-         const updatedLogs = [newLog, ...adminLogs];
-         const updatedNotis = [newNoti, ...notifications];
-         
-         setAdminLogs(updatedLogs);
-         setNotifications(updatedNotis);
+         setAdminLogs([newLog, ...adminLogs]);
+setNotifications([newNoti, ...notifications]);
 
-         await setDoc(doc(db, "SiteData", "adminLogs"), { data: updatedLogs });
-         await setDoc(doc(db, "SiteData", "notifications"), { data: updatedNotis });
+// Array အထုပ်ကြီးဖြင့်သိမ်းခြင်းကို ဖျက်၍ Collection အသစ်ထဲသို့ သီးခြားစီ Document ဖန်တီး၍ တိုက်ရိုက်သိမ်းမည်
+await setDoc(doc(db, "AdminLogs", newLog.id), newLog);
+await setDoc(doc(db, "Notifications", newNoti.id), newNoti);
       }
     }
 
@@ -1454,10 +1426,10 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
 
   const filteredShows = shows;
 
-  // 🌟 SERVER-SIDE USER SEARCH FUNCTION 🌟
+// 🌟 SERVER-SIDE COST-EFFECTIVE SEARCH 🌟
+  // ၃ ကောင့်ထွက်ရင် 3 Read သာ ကုန်မည့်နည်းလမ်း
   const handleSearchUser = async () => {
     if (!adminUserSearch.trim()) {
-        // ဘာမှ မရိုက်ဘဲ Search နှိပ်ပါက Active 50 ကို ပြန်ခေါ်မည်
         const uQuery = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(10));
         const uSnap = await getDocs(uQuery);
         setUsers(uSnap.docs.map(d => d.data() as UserData));
@@ -1465,39 +1437,56 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     }
     isSyncing.current = true;
     try {
-        const exactTarget = adminUserSearch.trim();
-        const lowerTarget = exactTarget.toLowerCase();
-        let targetUsername = exactTarget;
+        const searchKeyword = adminUserSearch.trim();
 
-        // ၁။ Transaction ID ဟုတ်မဟုတ် အရင်စစ်မည် (Point Requests / History ထဲတွင် အရင်ရှာမည်)
-        const foundTxn = pointRequests.find(r => r.idCode.toLowerCase() === lowerTarget);
-        if (foundTxn) {
-            targetUsername = foundTxn.username; // Txn ID မှန်ကန်ပါက သက်ဆိုင်ရာ Username ကို ဆွဲထုတ်မည်
-            showToast(`Txn ID ဖြင့် User: ${targetUsername} ကို ရှာတွေ့ပါသည်`);
+        let matchedUsers: UserData[] = [];
+
+        // ၁။ Username ဖြင့် ရှာခြင်း (ရှာသည့်စာသားဖြင့် စတင်သော နာမည်များကိုသာ ဆွဲထုတ်မည်)
+        const usernameQuery = query(
+            collection(db, "Users"),
+            where("username", ">=", searchKeyword),
+            where("username", "<=", searchKeyword + '\uf8ff'),
+            limit(10) // ထွက်လာမယ့် ရလဒ်ကိုလည်း အများဆုံး ၁၀ ခုပဲ ကန့်သတ်ထားလို့ Read လုံးဝမကုန်ပါ
+        );
+        const usernameSnap = await getDocs(usernameQuery);
+        matchedUsers = [...matchedUsers, ...usernameSnap.docs.map(d => d.data() as UserData)];
+
+        // ၂။ Email ဖြင့် ရှာခြင်း (Username တွင် မတွေ့ပါက Email ဖြင့် ထပ်ရှာမည်)
+        if (matchedUsers.length === 0 && searchKeyword.includes('@')) {
+            const emailQuery = query(
+                collection(db, "Users"),
+                where("email", ">=", searchKeyword),
+                where("email", "<=", searchKeyword + '\uf8ff'),
+                limit(10)
+            );
+            const emailSnap = await getDocs(emailQuery);
+            matchedUsers = [...matchedUsers, ...emailSnap.docs.map(d => d.data() as UserData)];
         }
 
-        if (exactTarget.includes('@')) {
-            // ၂။ Email ဖြင့် ရှာမည်
-            const emailQ = query(collection(db, "Users"), where("email", "==", lowerTarget));
-            const emailSnap = await getDocs(emailQ);
-            if (!emailSnap.empty) setUsers(emailSnap.docs.map(d => d.data() as UserData));
-            else { setUsers([]); showToast("User မတွေ့ပါ။ (Email မှားနေနိုင်ပါသည်)"); }
-        } else {
-            // ၃။ Username (သို့မဟုတ် Txn ID မှ ရလာသော Username) ဖြင့် ရှာမည်
-            const docSnap = await getDoc(doc(db, "Users", targetUsername));
-            if (docSnap.exists()) {
-                setUsers([docSnap.data() as UserData]);
-            } else {
-                const uQuery = query(collection(db, "Users"), where("username", "==", targetUsername));
-                const uSnap = await getDocs(uQuery);
-                if (!uSnap.empty) {
-                    setUsers(uSnap.docs.map(d => d.data() as UserData));
-                } else {
-                    setUsers([]); 
-                    showToast("ရှာမတွေ့ပါ။ (Username, Email သို့မဟုတ် ငွေသွင်း ID အတိအကျ ဖြစ်ရပါမည်)"); 
-                }
+        // ၃။ ငွေသွင်း ID ဖြင့် ရှာခြင်း (PointRequests တွင် တိုက်ရိုက်ရှာမည်)
+        if (matchedUsers.length === 0) {
+            const pQuery = query(
+                collection(db, "PointRequests"), 
+                where("idCode", "==", searchKeyword)
+            );
+            const pSnap = await getDocs(pQuery);
+            if (!pSnap.empty) {
+                const targetUsername = pSnap.docs[0].data().username;
+                const userDoc = await getDoc(doc(db, "Users", targetUsername));
+                if (userDoc.exists()) matchedUsers.push(userDoc.data() as UserData);
             }
         }
+
+        // ရလဒ်ကို UI သို့ ပို့ပေးခြင်း
+        if (matchedUsers.length > 0) {
+            // Duplicate ဖြစ်နေတာတွေရှိရင် ဖယ်ထုတ်ပေးမည်
+            const uniqueUsers = Array.from(new Map(matchedUsers.map(item => [item.username, item])).values());
+            setUsers(uniqueUsers);
+        } else {
+            setUsers([]); 
+            showToast("ရှာမတွေ့ပါ။ (စာလုံးအကြီးအသေး မှန်ကန်စွာ ရိုက်ထည့်ရန် လိုအပ်နိုင်ပါသည်)"); 
+        }
+        
         setUsersPage(1);
     } catch (e) {
         console.error(e);
@@ -2494,15 +2483,6 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     // Local UI ပြောင်းလဲခြင်း
     setPointRequests(prev => prev.map(p => p.id === req.id ? updatedReq : p));
     setNotifications(prev => [newNoti, ...prev]);
-
-    const nSnap = await getDoc(doc(db, "SiteData", "notifications"));
-    let latestNotis = notifications;
-    if (nSnap.exists() && nSnap.data().data) {
-        latestNotis = nSnap.data().data;
-    }
-    const updatedNotis = [newNoti, ...latestNotis];
-
-    setNotifications(updatedNotis);
 
     showToast(`${amount} ${t.msgApproved}`);
   } catch (error) {
