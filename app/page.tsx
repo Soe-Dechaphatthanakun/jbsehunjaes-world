@@ -666,7 +666,6 @@ export default function SweetieWorldApp() {
             fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
             fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: "Jbsehunjae's World မှာ ကြိုဆိုပါတယ်!" }]),
             fetchDoc("faqs", setFaqs, [{ id: '1', title_en: 'How to buy points?', body_en: 'Transfer via KPay or WavePay. Then submit your Transaction ID.', title_mm: 'Point ဘယ်လိုဝယ်ရမလဲ?', body_mm: 'KPay, WavePay မှ ငွေလွှဲပါ။ ပြီးလျှင် Transaction ID အား ထည့်ပေးပါ။' }]),
-            fetchMovieViews(),
             fetchPaymentProviders()
         ]);
 
@@ -4916,4 +4915,3 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
     </div>
   );
 }
-
