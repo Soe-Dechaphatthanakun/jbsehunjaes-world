@@ -3512,9 +3512,15 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                              setEditingShowId(s.id); setNewVideo(s); setEpCount(s.totalEpisodes); window.scrollTo({top:0, behavior: 'smooth'});
                            }} className="bg-blue-900/50 text-blue-300 px-3 py-1.5 rounded text-xs font-bold hover:bg-blue-900 transition-all flex items-center gap-1 shadow-[0_4px_0_#1e3a8a] active:shadow-none active:translate-y-1"><Edit className="w-3 h-3"/> Edit</button>
                            <button onClick={() => setConfirmModal({
-                               message: t.confirmDelDesc,
-                               onConfirm: () => { setShows(shows.filter(x => x.id !== s.id)); showToast(t.msgDeleted); }
-                           })} className="bg-red-900/50 text-red-300 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-900 transition-all flex items-center gap-1 shadow-[0_4px_0_#7f1d1d] active:shadow-none active:translate-y-1"><Trash2 className="w-3 h-3"/> Delete</button>
+    message: t.confirmDelDesc,
+    onConfirm: () => { 
+        // 🌟 Firebase Database အစစ်ပေါ်မှ အပြီးတိုင်ဖျက်ပစ်မည်
+        deleteDoc(doc(db, "Shows", s.id)).then(() => {
+            setShows(shows.filter(x => x.id !== s.id)); 
+        });
+        showToast(t.msgDeleted); 
+    }
+})} className="bg-red-900/50 text-red-300 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-900 transition-all flex items-center gap-1 shadow-[0_4px_0_#7f1d1d] active:shadow-none active:translate-y-1"><Trash2 className="w-3 h-3"/> Delete</button>
                          </div>
                       </div>
                     )) : (
