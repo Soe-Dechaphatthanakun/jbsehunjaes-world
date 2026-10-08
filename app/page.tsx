@@ -52,8 +52,6 @@ interface SocialLink { id: string; platform: string; url: string; logo?: string;
 interface SiteConfig { marqueeEn: string; marqueeMm: string; depositGuideEn: string; depositGuideMm: string; paymentWarningEn: string; paymentWarningMm: string; socialLinks: SocialLink[]; }
 interface NotificationData { id: string; targetUser: string; message: string; detail?: string; date: string; isRead: boolean; actionType: 'point_request' | 'point_approve' | 'point_reject' | 'admin_edit' | 'new_user' | 'new_upload' | 'ep_update'; readBy?: string[]; }
 interface AdminLogData { id: string; adminName: string; targetUser: string; action: string; remark: string; date: string; }
-// NEW: View Tracking Interface
-interface MovieViewData { total: number; dates: Record<string, number>; lastViewed: string; }
 
 // ------------------------------------------------------------------
 // INITIAL CONSTANTS & DEFAULT DATA
@@ -275,21 +273,6 @@ export default function SweetieWorldApp() {
     } finally {
        setIsLoadingSummary(false);
     }
-  };
-
-  // NEW: Movie Views States
-  const [movieViews, setMovieViews] = useState<Record<string, MovieViewData>>({});
-  const [viewStatsSearch, setViewStatsSearch] = useState('');
-  const [viewStatsDate, setViewStatsDate] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
-  const [viewStatsPage, setViewStatsPage] = useState(1);
-  const [viewStatsPerPage, setViewStatsPerPage] = useState(10);
-  // NEW: Sorting State for View Stats Table
-  const [viewStatsSortConfig, setViewStatsSortConfig] = useState<{key: 'today' | 'total' | 'date', direction: 'asc' | 'desc'}>({ key: 'date', direction: 'desc' });
-  const handleViewStatsSort = (key: 'today' | 'total' | 'date') => {
-    setViewStatsSortConfig(prev => ({
-       key,
-       direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
-    }));
   };
   
   // USER / AUTH STATES
@@ -631,10 +614,6 @@ export default function SweetieWorldApp() {
             }
         };
 
-        const fetchMovieViews = async () => {
-            const mvSnap = await getDoc(doc(db, "SiteData", "movieViews"));
-            if (mvSnap.exists() && mvSnap.data().data) { setMovieViews(mvSnap.data().data); }
-        };
 
         const fetchPaymentProviders = async () => {
             const providerSnap = await getDoc(doc(db, "SiteData", "paymentProviders"));
@@ -681,7 +660,6 @@ export default function SweetieWorldApp() {
             setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
             setAdminLogs(lSnap.docs.map(d => d.data() as AdminLogData));
             setNotifications(nSnap.docs.map(d => d.data() as NotificationData));
-            await fetchMovieViews();
         }
         
         setIsDataFetched(true); 
@@ -874,42 +852,6 @@ export default function SweetieWorldApp() {
     };
     checkDirectLink();
   }, [shows, isDataFetched, selectedShow]);
-  // ==========================================
-  // 4. ACTION HANDLERS
-    const trackMovieView = (showId: string) => {
-    const d = new Date(); 
-    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const localKey = `viewed_${showId}_${todayStr}`;
-    
-    if (!localStorage.getItem(localKey)) {
-       localStorage.setItem(localKey, 'true');
-       
-       // ၁။ Local UI အတွက် State ကို အရင်တိုးပေးမည် (Website ပေါ်မှာ ချက်ချင်း View တက်သွားရန်)
-       setMovieViews(prev => {
-          const existing = prev[showId] || { total: 0, dates: {}, lastViewed: '' };
-          const newDates = { ...existing.dates };
-          newDates[todayStr] = (newDates[todayStr] || 0) + 1;
-          return {
-             ...prev,
-             [showId]: { total: existing.total + 1, dates: newDates, lastViewed: new Date().toISOString() }
-          };
-       });
-
-       // ၂။ Database ဆီသို့ increment(1) ဖြင့် ပို့မည် (Data အထုပ်ကြီး မပါတော့ပါ)
-       // merge: true သုံးထားသဖြင့် အခြား User များ၏ နှိပ်ထားမှုများကို ဖုံးအုပ်သွားခြင်း မရှိတော့ပါ။
-       setDoc(doc(db, "SiteData", "movieViews"), { 
-          data: {
-             [showId]: {
-                total: increment(1),
-                dates: {
-                   [todayStr]: increment(1)
-                },
-                lastViewed: new Date().toISOString()
-             }
-          }
-       }, { merge: true }).catch(err => console.error("View Update Error:", err));
-    }
-  };
   // ==========================================
   const handleGetTelegramLink = async (channelId: string) => {
     if (!channelId) return showToast("Channel ID မရှိပါ။ Admin သို့ဆက်သွယ်ပါ။");
@@ -2174,151 +2116,10 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                      </div>
                    );
                 })()}
-		{/* NEW MOVIE VIEW STATS TABLE */}
-                        <div className="bg-[#1f1f1f] p-5 rounded-2xl border border-zinc-800 shadow-xl overflow-x-auto mt-6">
-                           <h4 className="text-lg font-black text-[#fcd385] mb-4 flex items-center gap-2"><Eye className="w-5 h-5"/> ဇာတ်ကား ကြည့်ရှုမှု မှတ်တမ်းများ (Movie View Stats)</h4>
-                           
-                           {/* --- NEW: BAR CHART FOR DAILY TOTAL VIEWS --- */}
-                           {(() => {
-                              // လွန်ခဲ့သော ၁၄ ရက်စာ နေ့စွဲများကို ဖန်တီးခြင်း
-                              const last14Days = Array.from({length: 14}, (_, i) => {
-                                  const d = new Date();
-                                  d.setDate(d.getDate() - (13 - i));
-                                  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                              });
 
-                              // နေ့အလိုက် ဇာတ်ကားအားလုံး၏ View များကို စုပေါင်းခြင်း
-                              const dailyTotals: Record<string, number> = {};
-                              Object.values(movieViews).forEach(movie => {
-                                 if(movie.dates) {
-                                     Object.entries(movie.dates).forEach(([dateStr, count]) => {
-                                         dailyTotals[dateStr] = (dailyTotals[dateStr] || 0) + count;
-                                     });
-                                 }
-                              });
 
-                              const chartData = last14Days.map(date => {
-                                  const dObj = new Date(date);
-                                  return {
-                                      date,
-                                      shortDate: `${dObj.toLocaleString('en-US', { month: 'short' })} ${dObj.getDate()}`,
-                                      count: dailyTotals[date] || 0
-                                  };
-                              });
 
-                              const maxChartCount = Math.max(...chartData.map(d => d.count), 1);
-
-                              return (
-                                 <div className="mb-8 mt-4 bg-black/30 p-4 sm:p-6 rounded-xl border border-zinc-800/50">
-                                    <div className="flex justify-between items-end mb-8">
-                                       <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Daily Views Overview (Last 14 Days)</p>
-                                       <p className="text-xs font-bold text-zinc-400">Total: <span className="text-sm font-black text-emerald-400">{chartData.reduce((sum, d) => sum + d.count, 0).toLocaleString()}</span></p>
-                                    </div>
-                                    
-                                    <div className="h-40 sm:h-48 flex items-end gap-1 sm:gap-2 border-b border-zinc-700 pb-1 relative">
-                                       {chartData.map((data, idx) => {
-                                          const heightPct = (data.count / maxChartCount) * 100;
-                                          return (
-                                            <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-                                               {/* Tooltip on Hover */}
-                                               <div className="absolute -top-8 bg-zinc-200 text-black text-[10px] sm:text-xs font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 shadow-lg">
-                                                  {data.count.toLocaleString()} Views
-                                               </div>
-                                               
-                                               {/* Bar Chart (Matches the reference image style) */}
-                                               <div 
-                                                 className="w-full max-w-[35px] bg-[#4a5568] group-hover:bg-[#a0aec0] rounded-t-[2px] transition-colors duration-200"
-                                                 style={{ height: data.count > 0 ? `${Math.max(heightPct, 2)}%` : '0%' }}
-                                               ></div>
-                                               
-                                               {/* X-Axis Date Label */}
-                                               <div className="absolute -bottom-6 text-[8px] sm:text-[10px] text-zinc-500 font-mono w-full text-center whitespace-nowrap overflow-hidden">
-                                                  {data.shortDate}
-                                               </div>
-                                            </div>
-                                          )
-                                       })}
-                                    </div>
-                                    <div className="h-4"></div> {/* Spacing for labels */}
-                                 </div>
-                              );
-                           })()}
-                           {/* --- END CHART --- */}
-
-                           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                              <div className="relative w-full sm:w-72">
-                                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                                 <input type="text" placeholder="Search Movie..." value={viewStatsSearch} onChange={e => {setViewStatsSearch(e.target.value); setViewStatsPage(1);}} className="w-full bg-black border border-zinc-700 pl-9 pr-4 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" />
-                              </div>
-                              <div className="flex items-center gap-2 bg-black border border-zinc-700 px-3 py-2 rounded-lg">
-                                 <Calendar className="w-4 h-4 text-zinc-400"/>
-                                 <input type="date" value={viewStatsDate} onChange={e => {setViewStatsDate(e.target.value); setViewStatsPage(1);}} className="bg-transparent text-xs text-white focus:outline-none outline-none cursor-pointer" />
-                              </div>
-                           </div>
-
-                           <table className="w-full text-left text-sm text-zinc-300 min-w-[700px]">
-                              <thead className="text-[10px] uppercase bg-black/60 text-zinc-400 border-b border-zinc-800 select-none">
-                                 <tr>
-                                    <th className="px-4 py-3">Movie Title</th>
-                                    <th className="px-4 py-3 text-right cursor-pointer hover:text-white transition group" onClick={() => handleViewStatsSort('today')}>
-                                       <div className="flex items-center justify-end gap-1">Views ({viewStatsDate === new Date().toISOString().split('T')[0] ? 'Today' : viewStatsDate}) <span className={`text-[10px] ${viewStatsSortConfig.key === 'today' ? 'text-[#fcd385]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>{viewStatsSortConfig.key === 'today' ? (viewStatsSortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span></div>
-                                    </th>
-                                    <th className="px-4 py-3 text-right cursor-pointer hover:text-white transition group" onClick={() => handleViewStatsSort('total')}>
-                                       <div className="flex items-center justify-end gap-1">Total Views <span className={`text-[10px] ${viewStatsSortConfig.key === 'total' ? 'text-[#fcd385]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>{viewStatsSortConfig.key === 'total' ? (viewStatsSortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span></div>
-                                    </th>
-                                    <th className="px-4 py-3 text-right cursor-pointer hover:text-white transition group" onClick={() => handleViewStatsSort('date')}>
-                                       <div className="flex items-center justify-end gap-1">Last Viewed <span className={`text-[10px] ${viewStatsSortConfig.key === 'date' ? 'text-[#fcd385]' : 'text-zinc-600 group-hover:text-zinc-400'}`}>{viewStatsSortConfig.key === 'date' ? (viewStatsSortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span></div>
-                                    </th>
-                                 </tr>
-                              </thead>
-                              <tbody>
-                                 {(() => {
-                                    const viewStatsArray = shows.map(s => {
-                                       const stats = movieViews[s.id] || { total: 0, dates: {}, lastViewed: '' };
-                                       return {
-                                          id: s.id,
-                                          // NEW: ဘာသာစကားရွေးချယ်မှု (lang) ပေါ်မူတည်ပြီး မြန်မာ/English နာမည် အလိုလို ပြောင်းပေးမည်
-                                          displayTitle: lang === 'en' ? (s.title_en || s.title_mm) : (s.title_mm || s.title_en),
-                                          searchStr: `${s.title_en || ''} ${s.title_mm || ''}`.toLowerCase(),
-                                          targetDateViews: stats.dates[viewStatsDate] || 0,
-                                          totalViews: stats.total,
-                                          lastViewed: stats.lastViewed
-                                       };
-                                    });
-
-                                    const filteredViewStats = viewStatsArray
-                                       .filter(s => s.searchStr.includes(viewStatsSearch.toLowerCase()))
-                                       .sort((a, b) => {
-                                           let comparison = 0;
-                                           if (viewStatsSortConfig.key === 'today') {
-                                              comparison = a.targetDateViews - b.targetDateViews;
-                                           } else if (viewStatsSortConfig.key === 'total') {
-                                              comparison = a.totalViews - b.totalViews;
-                                           } else if (viewStatsSortConfig.key === 'date') {
-                                              comparison = new Date(a.lastViewed || 0).getTime() - new Date(b.lastViewed || 0).getTime();
-                                           }
-                                           return viewStatsSortConfig.direction === 'asc' ? comparison : -comparison;
-                                       });
-
-                                    const paginatedViewStats = filteredViewStats.slice((viewStatsPage - 1) * viewStatsPerPage, viewStatsPage * viewStatsPerPage);
-
-                                    if (paginatedViewStats.length === 0) return <tr><td colSpan={4} className="text-center py-8 text-zinc-500 text-sm">No records found.</td></tr>;
-
-                                    return paginatedViewStats.map(stat => (
-                                       <tr key={stat.id} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
-                                          <td className="px-4 py-3 font-bold text-white truncate max-w-[200px]" title={stat.displayTitle}>{stat.displayTitle}</td>
-                                          <td className="px-4 py-3 text-right font-black text-emerald-400">{stat.targetDateViews.toLocaleString()}</td>
-                                          <td className="px-4 py-3 text-right font-black text-[#fcd385]">{stat.totalViews.toLocaleString()}</td>
-                                          <td className="px-4 py-3 text-right text-xs text-zinc-400">{formatDateTime(stat.lastViewed) || '-'}</td>
-                                       </tr>
-                                    ));
-                                 })()}
-                              </tbody>
-                           </table>
-                           
-                           {/* Pagination အတွက် မြန်မာ/English ၂ မျိုးလုံးကနေ ရှာလို့ရအောင် ပြင်ထားပါသည် */}
-                           {shows.length > 0 && renderPagination(viewStatsPage, setViewStatsPage, viewStatsPerPage, setViewStatsPerPage, shows.filter(s => (`${s.title_en || ''} ${s.title_mm || ''}`).toLowerCase().includes(viewStatsSearch.toLowerCase())).length)}
-                        </div>
+		
               </div>
             )}
             
@@ -3758,25 +3559,23 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                              }
 
                              if(isReleased) {
-                                if (isVipOnly && !isLongSeries && isVipUnlocked) {
-                                  // Bot ဆီသို့ DM သွားမည့် လမ်းကြောင်း (Database သစ်အတွက် Username ကိုပါ တွဲပို့မည်)
-                              	  const token = Math.random().toString(36).substring(2, 12);
+   if (isVipOnly && !isLongSeries && isVipUnlocked) {
+     // Bot ဆီသို့ DM သွားမည့် လမ်းကြောင်း (Database သစ်အတွက် Username ကိုပါ တွဲပို့မည်)
+     const token = Math.random().toString(36).substring(2, 12);
 await setDoc(doc(db, "Users", currentUser.username), { 
-    ...currentUser, 
-    tgToken: token, 
-    tgShow: selectedShow.id, 
-    tgEp: idx 
+...currentUser, 
+tgToken: token, 
+tgShow: selectedShow.id, 
+tgEp: idx 
 });
 const botUsername = "Jbsehunjae_vip_bot";
 window.location.href = `https://t.me/${botUsername}?start=${token}`;
-                                  trackMovieView(selectedShow.id);
-                                } else if (ep.links && ep.links.length === 1) {
-                                  window.open(ep.links[0].url, '_blank');
-                                  trackMovieView(selectedShow.id);
-                                } else {
-                                  setPlatformSelectModal({ep, show: selectedShow});
-                                }
-                             } else {
+   } else if (ep.links && ep.links.length === 1) {
+     window.open(ep.links[0].url, '_blank');
+   } else {
+     setPlatformSelectModal({ep, show: selectedShow});
+   }
+}else {
                                 if (isLongSeries && isVipUnlocked) {
                                    if (selectedShow.vipTelegramLink) handleGetTelegramLink(selectedShow.vipTelegramLink);
                                    else showToast("VIP Link not provided yet.");
@@ -3812,7 +3611,7 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                             <p className="text-zinc-300 text-xs sm:text-sm mt-1">{t.vipUnlockedDesc}</p>
                           </div>
                           {selectedShow.vipTelegramLink && (
-                             <button onClick={() => { handleGetTelegramLink(selectedShow.vipTelegramLink || ''); trackMovieView(selectedShow.id); }} disabled={isGeneratingTgLink} className="shrink-0 px-6 py-2 bg-[#fcd385] text-[#3e1717] font-black rounded-lg hover:bg-yellow-400 transition shadow-[0_0_15px_rgba(252,211,133,0.4)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                             <button onClick={() => { handleGetTelegramLink(selectedShow.vipTelegramLink || ''); }} disabled={isGeneratingTgLink} className="shrink-0 px-6 py-2 bg-[#fcd385] text-[#3e1717] font-black rounded-lg hover:bg-yellow-400 transition shadow-[0_0_15px_rgba(252,211,133,0.4)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                                 {isGeneratingTgLink ? ( <><span className="w-4 h-4 border-2 border-[#3e1717] border-t-transparent rounded-full animate-spin"></span> Loading...</> ) : ( "Watch on Telegram" )}
                              </button>
                           )}
@@ -4234,7 +4033,6 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                   <button key={idx} onClick={() => {
                       window.open(lnk.url, '_blank');
 setPlatformSelectModal(null);
-trackMovieView(platformSelectModal.show.id);
                   }} className="w-full bg-black/50 border border-zinc-700 hover:border-[#fcd385] text-white font-bold py-3 rounded-xl shadow-inner hover:shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1 transition-all flex items-center justify-center gap-2">
                      {lnk.platform === 'Facebook' ? <Globe className="w-5 h-5 text-blue-500" /> : lnk.platform === 'Telegram' ? <Send className="w-5 h-5 text-blue-400" /> : lnk.platform === 'Viber' ? <MessageCircle className="w-5 h-5 text-purple-500"/> : <Play className="w-5 h-5 text-[#fcd385]" />}
                      {t.watchOn} {lnk.platform}
@@ -4495,9 +4293,8 @@ setDoc(doc(db, "PurchaseLogs", logId), {
 
                       // NEW LOGIC: VIP ဝင်ပြီးတာနဲ့ Telegram Private Channel ဆီ တန်းသွားမည်
                       if (vipModalShow.vipTelegramLink) {
-  		 	handleGetTelegramLink(vipModalShow.vipTelegramLink);
-   			trackMovieView(vipModalShow.id);
-                      } else {
+    handleGetTelegramLink(vipModalShow.vipTelegramLink);
+} else {
                          showToast("VIP Link မထည့်ရသေးပါ။ Admin သို့ဆက်သွယ်ပါ။");
                       }
                    } else {
