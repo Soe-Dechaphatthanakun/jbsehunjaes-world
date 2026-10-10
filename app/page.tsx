@@ -1093,7 +1093,7 @@ export default function SweetieWorldApp() {
           
           try {
               await sendPasswordResetEmail(auth, inputEmail);
-              setAlertModal({ message: "Password အသစ်ချိန်းရန် Link အား သင့် Email သို့ ပို့ပေးလိုက်ပါသည်။ Email ဝင်စစ်ဆေးပါ။" });
+              setAlertModal({ message: "Password အသစ်ချိန်းရန် Link အား သင့် Email သို့ ပို့ပေးလိုက်ပါသည်။ Inbox တွင် မတွေ့ပါက Spam ဖိုင်ဒါကိုပါ ဝင်ရောက်စစ်ဆေးပေးပါ။" });
               setAuthMode('login');
           } catch (error: any) {
               console.error(error);
@@ -2184,6 +2184,22 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                              </td>
                              <td className="px-4 py-3 text-right">
                                <div className="flex justify-end gap-2">
+                                 
+                                 {/* NEW: Reset Password ခလုတ် */}
+                                 <button onClick={() => {
+                                   setConfirmModal({
+                                      message: `${u.username} ၏ Email သို့ Password အသစ်ပြောင်းရန် Link ပို့ပေးမည်မှာ သေချာပါသလား?`,
+                                      onConfirm: async () => { 
+                                         try {
+                                            await sendPasswordResetEmail(auth, u.email);
+                                            showToast(`Reset Email ကို ${u.username} ထံ အောင်မြင်စွာ ပို့ပေးလိုက်ပါပြီ။ (Spam တွင်ရှာရန်ပြောပါ)`);
+                                         } catch (error) {
+                                            showToast("Email ပို့ရာတွင် အမှားအယွင်းရှိနေပါသည်။");
+                                         }
+                                      }
+                                   });
+                                 }} className="p-2 bg-zinc-800 rounded text-yellow-400 hover:bg-zinc-700 transition" title="Send Reset Password Email"><Key className="w-4 h-4"/></button>
+                                 
                                  <button onClick={() => setUserDetailModal(u)} className="p-2 bg-zinc-800 rounded text-emerald-400 hover:bg-zinc-700 transition" title="View Details"><Eye className="w-4 h-4"/></button>
                                  <button onClick={() => {setEditUserForm({...u}); setEditUserRemark(''); setEditUserModal({isOpen: true, mode: 'edit', oldUsername: u.username});}} className="p-2 bg-zinc-800 rounded text-blue-400 hover:bg-zinc-700 transition" title="Edit User"><Edit className="w-4 h-4"/></button>
                                  
