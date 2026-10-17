@@ -37,7 +37,7 @@ const secondaryAuth = getAuth(secondaryApp);
 // ------------------------------------------------------------------
 interface EpLink { platform: string; url: string; }
 interface EpisodeData { epLabel: string; links: EpLink[]; releaseDateRaw?: string; releaseDate: string; isVipOnly?: boolean; }
-interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; seriesType?: 'long' | 'mini'; updatedAt?: string; }
+interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; seriesType?: 'long' | 'mini'; updatedAt?: string; searchKeywords?: string[]; }
 
 // History tracking for usage and admin bonuses
 interface UserHistoryLog { id: string; type: 'usage' | 'admin_bonus' | 'buy_vip' | 'buy_ep'; title: string; amount: number; date: string; remainingBalance?: number; }
@@ -247,6 +247,7 @@ export default function SweetieWorldApp() {
   // NEW: Admin Content Summary States (Upgraded for Edit)
   const [adminSummary, setAdminSummary] = useState<Record<string, {count: number, shows: VideoCardData[]}>>({});
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   // NEW: Generate Summary Function (Upgraded for Edit)
   const handleGenerateSummary = async () => {
@@ -263,7 +264,7 @@ export default function SweetieWorldApp() {
             summary[cat] = { count: 0, shows: [] };
          }
          summary[cat].count += 1;
-         summary[cat].shows.push(data); // ဇာတ်ကား အချက်အလက် အပြည့်အစုံကို Report အတွက် သိမ်းမည်
+         summary[cat].shows.push(data); 
        });
 
        setAdminSummary(summary);
@@ -274,6 +275,70 @@ export default function SweetieWorldApp() {
        setIsLoadingSummary(false);
     }
   };
+
+  // 🌟 NEW: One-Click Optimize Keywords Function (Bandwidth လျှော့ချရန်)
+  const handleOptimizeKeywords = async () => {
+    if (!confirmModal) {
+       setConfirmModal({
+          message: "Database ပေါ်ရှိ ဇာတ်ကားဟောင်းများမှ Keyword အမှိုက်များကို ရှင်းလင်းမည်မှာ သေချာပါသလား? (ဤသို့လုပ်ဆောင်ခြင်းဖြင့် Bandwidth အလွန်သက်သာသွားမည်ဖြစ်ပြီး၊ Search လုပ်ရာတွင်လည်း ယခင်အတိုင်း ရှာတွေ့နေမည်ဖြစ်ပါသည်)",
+          onConfirm: async () => {
+             setIsOptimizing(true);
+             isSyncing.current = true;
+             let optimizedCount = 0;
+
+             try {
+                const generateKeywordsNew = (str1: string, str2: string) => {
+                   const result = new Set<string>();
+                   const addSubstrings = (s: string) => {
+                       const clean = s.toLowerCase().replace(/\s+/g, '');
+                       if (!clean) return;
+                       result.add(clean);
+                       const truncated = clean.substring(0, 35);
+                       for (let i = 0; i < truncated.length; i++) {
+                           const maxLen = Math.min(truncated.length, i + 15);
+                           for (let j = i + 1; j <= maxLen; j++) {
+                               result.add(truncated.substring(i, j));
+                           }
+                       }
+                   };
+                   if (str1) addSubstrings(str1);
+                   if (str2) addSubstrings(str2);
+                   return Array.from(result);
+                };
+
+                const allShowsSnap = await getDocs(collection(db, "Shows"));
+                const updatePromises: Promise<void>[] = [];
+
+                allShowsSnap.forEach(document => {
+                   const data = document.data() as VideoCardData;
+                   // ဇာတ်ကား၏ Keyword များကို Optimized ပုံစံသစ်ဖြင့် ပြန်လည်ထုတ်ယူမည်
+                   const optimizedKeywords = generateKeywordsNew(data.title_en || '', data.title_mm || '');
+                   
+                   // အဟောင်းနှင့်မတူဘဲ ပြောင်းလဲသွားမှသာ Database ပေါ်သို့ ပြန်သိမ်းမည်
+                   if (JSON.stringify(data.searchKeywords || []) !== JSON.stringify(optimizedKeywords)) {
+                      updatePromises.push(setDoc(doc(db, "Shows", data.id), { searchKeywords: optimizedKeywords }, { merge: true }));
+                      optimizedCount++;
+                   }
+                });
+
+                await Promise.all(updatePromises);
+                showToast(`Optimization ပြီးဆုံးပါပြီ။ ဇာတ်ကား (${optimizedCount}) ကားကို ရှင်းလင်းပေးလိုက်ပါပြီ။`);
+                
+                // လက်ရှိ မျက်နှာပြင်ပေါ်ရှိ ဇာတ်ကားစာရင်းကိုပါ ပြန်လည်လန်းဆန်းစေရန်
+                fetchMovies(false, activeCategory, ''); 
+             } catch (error) {
+                console.error("Optimization error:", error);
+                showToast("ရှင်းလင်းရာတွင် အမှားအယွင်းဖြစ်သွားပါသည်။");
+             } finally {
+                setIsOptimizing(false);
+                isSyncing.current = false;
+             }
+          }
+       });
+    }
+  };
+
+  
   
   // USER / AUTH STATES
   const [currentUser, setCurrentUser] = useState<UserData | null>(null);
@@ -3295,10 +3360,18 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                          <h4 className="text-lg font-bold text-[#fcd385]">Database Content Summary (ဇာတ်ကားစာရင်းချုပ်)</h4>
                          <p className="text-xs text-zinc-400 mt-1">Category အလိုက် တင်ထားသော ဇာတ်ကားအရေအတွက်နှင့် ခေါင်းစဉ်များကို ကြည့်ရန် အောက်ပါခလုတ်ကို နှိပ်ပါ။</p>
                       </div>
-                      <button onClick={handleGenerateSummary} disabled={isLoadingSummary} className="bg-gradient-to-r from-blue-900 to-indigo-900 text-blue-200 px-4 py-2 rounded-lg font-bold text-sm hover:brightness-110 transition border border-blue-700/50 flex items-center gap-2 whitespace-nowrap shadow-lg">
-                         {isLoadingSummary ? <RefreshCw className="w-4 h-4 animate-spin"/> : <ListVideo className="w-4 h-4"/>} 
-                         {isLoadingSummary ? 'Loading Report...' : 'Generate Full Report'}
-                      </button>
+                      <div className="flex flex-col gap-2 w-full sm:w-auto">
+                        <button onClick={handleGenerateSummary} disabled={isLoadingSummary} className="w-full bg-gradient-to-r from-blue-900 to-indigo-900 text-blue-200 px-4 py-2 rounded-lg font-bold text-sm hover:brightness-110 transition border border-blue-700/50 flex items-center justify-center gap-2 whitespace-nowrap shadow-lg">
+                           {isLoadingSummary ? <RefreshCw className="w-4 h-4 animate-spin"/> : <ListVideo className="w-4 h-4"/>} 
+                           {isLoadingSummary ? 'Loading Report...' : 'Generate Full Report'}
+                        </button>
+                        
+                        {/* 🌟 NEW: One-Click Optimize Button */}
+                        <button onClick={handleOptimizeKeywords} disabled={isOptimizing} className="w-full bg-gradient-to-r from-emerald-900 to-teal-900 text-emerald-200 px-4 py-2 rounded-lg font-bold text-sm hover:brightness-110 transition border border-emerald-700/50 flex items-center justify-center gap-2 whitespace-nowrap shadow-lg">
+                           {isOptimizing ? <RefreshCw className="w-4 h-4 animate-spin"/> : <Sparkles className="w-4 h-4"/>} 
+                           {isOptimizing ? 'Optimizing...' : 'Optimize Keywords'}
+                        </button>
+                      </div>
                    </div>
                    
                    {Object.keys(adminSummary).length > 0 && (
