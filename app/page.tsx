@@ -515,6 +515,9 @@ export default function SweetieWorldApp() {
   const [adminPromoSearch, setAdminPromoSearch] = useState('');
   const [adminFaqSearch, setAdminFaqSearch] = useState('');
   const [approveAmounts, setApproveAmounts] = useState<Record<string, number>>({});
+  const [editIdCodes, setEditIdCodes] = useState<Record<string, string>>({});
+  const [isSubmittingPoint, setIsSubmittingPoint] = useState(false);
+  const isSubmittingPointRef = useRef(false);
   const [editUserModal, setEditUserModal] = useState<{isOpen: boolean, mode: 'create'|'edit', oldUsername?: string}>({isOpen: false, mode: 'create'});
   const [editUserForm, setEditUserForm] = useState<UserData>({username: '', email: '', password: '', role: 'user', points: 0, vip: false, unlockedShows: [], createdAt: '', lastLoginAt: '', pointHistory: []});
   const [editUserRemark, setEditUserRemark] = useState(''); 
@@ -1235,6 +1238,10 @@ export default function SweetieWorldApp() {
  const handlePointSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !selectedProvider || !idCodeInput.trim() || !amountInput.trim()) return;
+    if (isSubmittingPointRef.current) return; // ခလုတ်ကို ဆင့်နှိပ်မိပါက ချက်ချင်းတားဆီးမည်
+
+    isSubmittingPointRef.current = true;
+    setIsSubmittingPoint(true);
 
     try {
       // --- ၁။ Database ပေါ်ရှိ Point Requests Collection တွင် Duplicate ဖြစ်/မဖြစ် အတိအကျလှမ်းစစ်မည် (1 Read သာကုန်ကျမည်) ---
@@ -1257,8 +1264,8 @@ export default function SweetieWorldApp() {
         date: new Date().toISOString(), isRead: false, actionType: 'point_request'
       };
       
-      setNotifications([newNoti, ...notifications]);
-      setPointRequests([newReq, ...pointRequests]);
+      setNotifications(prev => [newNoti, ...prev]);
+      setPointRequests(prev => [newReq, ...prev]);
       
       // 🌟 Database သို့ သိမ်းဆည်းခြင်း (Collection အမှန်ထဲသို့သာ တိုက်ရိုက်သိမ်းမည်)
       await Promise.all([
@@ -1274,6 +1281,9 @@ export default function SweetieWorldApp() {
     } catch (error) {
       console.error("Error submitting point request: ", error);
       setAlertModal({ message: "Network Error. Please try again." });
+    } finally {
+      isSubmittingPointRef.current = false;
+      setIsSubmittingPoint(false);
     }
   };
 	
@@ -2331,7 +2341,8 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
               </div>
             )}
 
-            {adminActiveTab === 'points' && (
+
+	{adminActiveTab === 'points' && (
               <div className="animate-fade-in space-y-6">
                 <div className="flex justify-between items-center">
                   <h3 className="text-xl font-bold text-white border-l-4 border-[#fcd385] pl-3">{t.pointReqs}</h3>
@@ -2346,25 +2357,31 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                         <div>
                           <p className="text-sm font-bold text-white mb-1">User: <span className="text-blue-400">{req.username}</span></p>
                           <p className="text-xs text-zinc-400 mb-0.5">Provider: {req.provider}</p>
-                          <p className="text-xs text-[#fcd385] font-bold">Txn ID: {req.idCode}</p>
+                          <p className="text-xs text-[#fcd385] font-bold">Txn ID: {editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode}</p>
                           {req.requestedAmount && <p className="text-xs text-emerald-400 font-bold mt-0.5">Amount: {req.requestedAmount}</p>}
                           <p className="text-[10px] text-zinc-500 mt-1">{formatDateTime(req.date)}</p>
                         </div>
-                        <div className="flex items-center gap-2 w-full md:w-auto">
+                        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                           <input 
-                            type="number" min="1" placeholder="Amount" value={approveAmounts[req.id] || req.requestedAmount || ''}
+                            type="text" placeholder="Txn ID" value={editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode}
+                            onChange={(e) => setEditIdCodes({...editIdCodes, [req.id]: e.target.value})}
+                            className="w-36 bg-zinc-900 border border-zinc-700 p-2 text-sm text-[#fcd385] font-mono rounded-lg focus:outline-none focus:border-[#fcd385]"
+                          />
+                          <input 
+                            type="number" min="1" placeholder="Amount" value={approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.requestedAmount || '')}
                             onChange={(e) => setApproveAmounts({...approveAmounts, [req.id]: Number(e.target.value)})}
                             className="w-24 bg-zinc-900 border border-zinc-700 p-2 text-sm text-white rounded-lg focus:outline-none focus:border-[#fcd385]"
                           />
                           <button onClick={async () => {
-  const amount = approveAmounts[req.id] || req.requestedAmount || 0;
+  const amount = approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.requestedAmount || 0);
+  const finalIdCode = (editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode).trim() || req.idCode;
   if (amount <= 0) return setAlertModal({ message: "Please enter a valid amount." });
   
   isSyncing.current = true; // Auto-sync ကို ခဏပိတ်မည်
   try {
     const newNoti: NotificationData = {
       id: Date.now().toString()+'_noti', targetUser: req.username,
-      message: `ID ${req.idCode} အတွက် Point ထည့်သွင်းပေးလိုက်ပါပြီ။`, detail: `+${amount} PTS ဖြည့်သွင်းပြီးပါပြီ။`,
+      message: `ID ${finalIdCode} အတွက် Point ထည့်သွင်းပေးလိုက်ပါပြီ။`, detail: `+${amount} PTS ဖြည့်သွင်းပြီးပါပြီ။`,
       date: new Date().toISOString(), isRead: false, actionType: 'point_approve'
     };
 
@@ -2387,9 +2404,9 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
     setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUser : u));
 
     // ၂။ PointRequests Collection ရှိ သက်ဆိုင်ရာ Document တစ်ခုတည်းကိုသာ Update လုပ်မည်
-    // 💡 Error 4 ပြင်ရန် ( : PointRequest ထည့်ပေးပါသည် )
     const updatedReq: PointRequest = { 
         ...req, 
+        idCode: finalIdCode,
         status: 'approved', 
         amount: amount, 
         remainingBalance: updatedUser.points 
@@ -2414,19 +2431,19 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                           
                           {/* Reject with Remark 3D Modal */}
                           <button onClick={() => {
+                             const finalIdCode = (editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode).trim() || req.idCode;
                              setPromptModal({
                                title: t.confirmRejectTitle,
                                placeholder: t.rejectPlaceholder,
                                onSubmit: (reason) => {
                                  const newNoti: NotificationData = {
                                    id: Date.now().toString()+'_noti', targetUser: req.username,
-                                   message: `ID ${req.idCode} အတွက် ပယ်ချလိုက်ပါသည်။ Remark ကိုဖတ်ရန်နှိပ်ပါ။`, detail: reason,
+                                   message: `ID ${finalIdCode} အတွက် ပယ်ချလိုက်ပါသည်။ Remark ကိုဖတ်ရန်နှိပ်ပါ။`, detail: reason,
                                    date: new Date().toISOString(), isRead: false, actionType: 'point_reject'
                                  };
-                                 // Firebase သို့ Collection အသစ်ဖြင့် တိုက်ရိုက် Save မည်
-                                 // 💡 TS Error ဖြေရှင်းရန် : PointRequest ဟု ကြေညာပေးရပါမည်
                                  const rejectedReq: PointRequest = { 
                                      ...req, 
+                                     idCode: finalIdCode,
                                      status: 'rejected', 
                                      remark: reason 
                                  };
@@ -2537,7 +2554,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                              <th className="px-4 py-3 text-right">Action</th>
                           </tr>
                        </thead>
-                       <tbody>
+			<tbody>
                          {paginatedHistory.length === 0 ? (
                            <tr><td colSpan={6} className="text-center py-8 text-zinc-500 text-sm">No records found.</td></tr>
                          ) : paginatedHistory.map((req, i) => (
@@ -2546,10 +2563,28 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                              <td className="px-4 py-3 font-bold text-blue-400">{req.username}</td>
                              <td className="px-4 py-3">
                                 <p className="text-xs text-zinc-300">{req.provider}</p>
-                                <p className="text-[11px] text-[#fcd385] font-mono mt-0.5 tracking-wider">{req.idCode}</p>
+                                {req.status === 'rejected' ? (
+                                   <input 
+                                     type="text" 
+                                     value={editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode}
+                                     onChange={(e) => setEditIdCodes({...editIdCodes, [req.id]: e.target.value})}
+                                     className="mt-1 w-36 bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs text-[#fcd385] font-mono rounded focus:outline-none focus:border-[#fcd385]"
+                                   />
+                                ) : (
+                                   <p className="text-[11px] text-[#fcd385] font-mono mt-0.5 tracking-wider">{req.idCode}</p>
+                                )}
                              </td>
                              <td className="px-4 py-3 text-right font-bold text-emerald-400">
-                                {req.requestedAmount || req.amount}
+                                {req.status === 'rejected' ? (
+                                   <input 
+                                     type="number" min="1"
+                                     value={approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.requestedAmount || req.amount || '')}
+                                     onChange={(e) => setApproveAmounts({...approveAmounts, [req.id]: Number(e.target.value)})}
+                                     className="w-24 bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs text-white text-right rounded focus:outline-none focus:border-[#fcd385]"
+                                   />
+                                ) : (
+                                   req.requestedAmount || req.amount
+                                )}
                              </td>
                              <td className="px-4 py-3 text-center">
                                {req.status === 'pending' && <span className="text-[10px] bg-yellow-900/50 text-yellow-400 px-2 py-1 rounded font-bold uppercase">{t.statusPending}</span>}
@@ -2557,17 +2592,75 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                {req.status === 'rejected' && <div className="flex flex-col items-center gap-1"><span className="text-[10px] bg-red-900/50 text-red-400 px-2 py-1 rounded font-bold uppercase">{t.statusRejected}</span>{req.remark && <span className="text-[9px] text-red-300 italic max-w-[120px] truncate" title={req.remark}>{req.remark}</span>}</div>}
                              </td>
                              <td className="px-4 py-3 text-right">
-                               <button onClick={() => {
-                                 setConfirmModal({
-                                   message: t.confirmDelDesc,
-                                   onConfirm: () => {
-                                     deleteDoc(doc(db, "PointRequests", req.id)).then(() => {
-                                         setPointRequests(pointRequests.filter(p => p.id !== req.id));
-                                      });
-                                      showToast(t.msgDeleted);
-                                   }
-                                 });
-                               }} className="p-2 bg-zinc-800 rounded text-red-400 hover:bg-zinc-700 transition"><Trash2 className="w-4 h-4"/></button>
+                               <div className="flex items-center justify-end gap-2">
+                                 {req.status === 'rejected' && (
+                                   <button onClick={async () => {
+                                     const amount = approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.requestedAmount || req.amount || 0);
+                                     const finalIdCode = (editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode).trim() || req.idCode;
+                                     if (amount <= 0) return setAlertModal({ message: "Please enter a valid amount." });
+
+                                     isSyncing.current = true;
+                                     try {
+                                       const userRef = doc(db, "Users", req.username);
+                                       const userSnap = await getDoc(userRef);
+                                       if (!userSnap.exists()) {
+                                         showToast("Error: ဤ User ကို Database တွင် ရှာမတွေ့ပါ။");
+                                         isSyncing.current = false;
+                                         return;
+                                       }
+                                       const userData = userSnap.data() as UserData;
+                                       const updatedUser = { ...userData, points: (userData.points || 0) + amount };
+
+                                       await setDoc(userRef, updatedUser);
+                                       setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUser : u));
+
+                                       const updatedReq: PointRequest = {
+                                         ...req,
+                                         idCode: finalIdCode,
+                                         status: 'approved',
+                                         amount: amount,
+                                         remark: '',
+                                         remainingBalance: updatedUser.points
+                                       };
+
+                                       const newNoti: NotificationData = {
+                                         id: Date.now().toString() + '_noti',
+                                         targetUser: req.username,
+                                         message: `ID ${finalIdCode} အတွက် Point ပြန်လည်ထည့်သွင်းပေးလိုက်ပါပြီ။`,
+                                         detail: `+${amount} PTS ဖြည့်သွင်းပြီးပါပြီ။`,
+                                         date: new Date().toISOString(),
+                                         isRead: false,
+                                         actionType: 'point_approve'
+                                       };
+
+                                       await setDoc(doc(db, "PointRequests", req.id), updatedReq);
+                                       await setDoc(doc(db, "Notifications", newNoti.id), newNoti);
+
+                                       setPointRequests(prev => prev.map(p => p.id === req.id ? updatedReq : p));
+                                       setNotifications(prev => [newNoti, ...prev]);
+
+                                       showToast(`${amount} ${t.msgApproved}`);
+                                     } catch (error) {
+                                       console.error("Error re-approving points: ", error);
+                                     } finally {
+                                       isSyncing.current = false;
+                                     }
+                                   }} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow">
+                                     {t.approveBtn}
+                                   </button>
+                                 )}
+                                 <button onClick={() => {
+                                   setConfirmModal({
+                                     message: t.confirmDelDesc,
+                                     onConfirm: () => {
+                                       deleteDoc(doc(db, "PointRequests", req.id)).then(() => {
+                                           setPointRequests(pointRequests.filter(p => p.id !== req.id));
+                                        });
+                                        showToast(t.msgDeleted);
+                                     }
+                                   });
+                                 }} className="p-2 bg-zinc-800 rounded text-red-400 hover:bg-zinc-700 transition"><Trash2 className="w-4 h-4"/></button>
+                               </div>
                              </td>
                            </tr>
                          ))}
@@ -4058,7 +4151,7 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                             <label className="block text-xs font-bold text-zinc-300 mb-1">Amount</label>
                             <input type="number" min="1" required placeholder="e.g. 1000" value={amountInput} onChange={e => setAmountInput(e.target.value)} className="w-full bg-black border border-zinc-700 p-3 rounded-lg text-white text-sm focus:outline-none focus:border-[#fcd385]" />
                           </div>
-                          <button type="submit" className="w-full bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-3 rounded-xl shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1 transition-all">{t.paySubmitBtn}</button>
+                          <button type="submit" disabled={isSubmittingPoint} className="w-full bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-3 rounded-xl shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed">{isSubmittingPoint ? 'Submitting...' : t.paySubmitBtn}</button>
                        </form>
                     </div>
                  </div>
