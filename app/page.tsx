@@ -2395,13 +2395,13 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
         return;
     }
     const userData = userSnap.data() as UserData;
-    const updatedUser = { ...userData, points: (userData.points || 0) + amount };
+    const updatedUserForUI = { ...userData, points: (userData.points || 0) + amount };
 
-    // ၁။ User ဆီသို့ Point အတိအကျ ပေါင်းထည့်မည် (Firebase ပေါ် တိုက်ရိုက် Save မည်)
-    await setDoc(userRef, updatedUser);
+    // ၁။ Firebase ပေါ်တွင် Point အတိအကျ ပေါင်းထည့်ရန် increment ကိုသုံးမည် (Database Overwrite မဖြစ်စေရန် merge သုံးထားသည်)
+    await setDoc(userRef, { points: increment(amount) }, { merge: true });
 
     // (UI ပေါ်ရှိ Local Users State တွင် ပါဝင်နေပါက Update လုပ်ပေးမည်)
-    setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUser : u));
+    setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUserForUI : u));
 
     // ၂။ PointRequests Collection ရှိ သက်ဆိုင်ရာ Document တစ်ခုတည်းကိုသာ Update လုပ်မည်
     const updatedReq: PointRequest = { 
@@ -2409,7 +2409,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
         idCode: finalIdCode,
         status: 'approved', 
         amount: amount, 
-        remainingBalance: updatedUser.points 
+        remainingBalance: updatedUserForUI.points 
     };
     
     await setDoc(doc(db, "PointRequests", req.id), updatedReq);
@@ -2609,10 +2609,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                          return;
                                        }
                                        const userData = userSnap.data() as UserData;
-                                       const updatedUser = { ...userData, points: (userData.points || 0) + amount };
+                                       const updatedUserForUI = { ...userData, points: (userData.points || 0) + amount };
 
-                                       await setDoc(userRef, updatedUser);
-                                       setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUser : u));
+                                       // Firebase ပေါ်တွင် increment ဖြင့် အတိအကျ ပေါင်းထည့်မည်
+                                       await setDoc(userRef, { points: increment(amount) }, { merge: true });
+                                       setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUserForUI : u));
 
                                        const updatedReq: PointRequest = {
                                          ...req,
@@ -2620,7 +2621,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                          status: 'approved',
                                          amount: amount,
                                          remark: '',
-                                         remainingBalance: updatedUser.points
+                                         remainingBalance: updatedUserForUI.points
                                        };
 
                                        const newNoti: NotificationData = {
@@ -3786,11 +3787,10 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
      // Bot ဆီသို့ DM သွားမည့် လမ်းကြောင်း (Database သစ်အတွက် Username ကိုပါ တွဲပို့မည်)
      const token = Math.random().toString(36).substring(2, 12);
 await setDoc(doc(db, "Users", currentUser.username), { 
-...currentUser, 
-tgToken: token, 
-tgShow: selectedShow.id, 
-tgEp: idx 
-});
+       tgToken: token, 
+       tgShow: selectedShow.id, 
+       tgEp: idx 
+     }, { merge: true });
 const botUsername = "Jbsehunjae_vip_bot";
 window.location.href = `https://t.me/${botUsername}?start=${token}`;
    } else if (ep.links && ep.links.length === 1) {
@@ -4487,19 +4487,23 @@ setPlatformSelectModal(null);
                          remainingBalance: currentUser.points - cost
                       };
 
-                      const updatedUser = {
-   ...currentUser,
-   points: currentUser.points - cost,
-   unlockedShows: [...(currentUser.unlockedShows || []), vipModalShow.id],
-   pointHistory: [newLog, ...(currentUser.pointHistory || [])]
-};
+                      const updatedUserForUI = {
+                         ...currentUser,
+                         points: currentUser.points - cost,
+                         unlockedShows: [...(currentUser.unlockedShows || []), vipModalShow.id],
+                         pointHistory: [newLog, ...(currentUser.pointHistory || [])]
+                      };
 
-const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
-// သင့် User လေးတစ်ယောက်တည်းကိုသာ Update လုပ်မည့်အစား Array တစ်ခုလုံးကိုပါ သေချာ Update လုပ်ပေးခြင်း
-const newlyUpdatedUsers = users.map(u => u.username === currentUser.username ? updatedUser : u);
-setUsers(newlyUpdatedUsers); 
-setDoc(doc(db, "Users", currentUser.username), updatedUser);
-setCurrentUser(updatedUser);
+                      // DB တွင် increment သုံး၍ နုတ်မည် (Admin ပေါင်းထည့်သည်များနှင့် မငြိစေရန်)
+                      const dbUpdateData = {
+                         points: increment(-cost),
+                         unlockedShows: [...(currentUser.unlockedShows || []), vipModalShow.id],
+                         pointHistory: [newLog, ...(currentUser.pointHistory || [])]
+                      };
+
+                      setUsers(users.map(u => u.username === currentUser.username ? updatedUserForUI : u)); 
+                      setDoc(doc(db, "Users", currentUser.username), dbUpdateData, { merge: true });
+                      setCurrentUser(updatedUserForUI);
 
 // NEW: Save to separate PurchaseLogs Collection (1 Write Only)
 const logId = Date.now().toString();
@@ -4576,15 +4580,21 @@ setDoc(doc(db, "PurchaseLogs", logId), {
    const cost = miniVipModalShow.show.pointsPerEp;
    if (currentUser.points >= cost) {
                       const newLog: UserHistoryLog = { id: Date.now().toString(), type: 'buy_ep', title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`, amount: -cost, date: new Date().toISOString(), remainingBalance: currentUser.points - cost };
-                      const updatedUser = {
+                      const updatedUserForUI = {
                          ...currentUser, points: currentUser.points - cost,
                          unlockedEpisodes: [...(currentUser.unlockedEpisodes || []), `${miniVipModalShow.show.id}_${miniVipModalShow.epIndex}`],
                          pointHistory: [newLog, ...(currentUser.pointHistory || [])]
                       };
-                      const updatedUsersList = users.map(u => u.username === currentUser.username ? updatedUser : u);
-                      setUsers(updatedUsersList);
-                      setDoc(doc(db, "Users", currentUser.username), updatedUser);
-setCurrentUser(updatedUser);
+                      
+                      const dbUpdateData = {
+                         points: increment(-cost),
+                         unlockedEpisodes: [...(currentUser.unlockedEpisodes || []), `${miniVipModalShow.show.id}_${miniVipModalShow.epIndex}`],
+                         pointHistory: [newLog, ...(currentUser.pointHistory || [])]
+                      };
+
+                      setUsers(users.map(u => u.username === currentUser.username ? updatedUserForUI : u));
+                      setDoc(doc(db, "Users", currentUser.username), dbUpdateData, { merge: true });
+                      setCurrentUser(updatedUserForUI);
 
 // NEW: Save to separate PurchaseLogs Collection (1 Write Only)
 const logId = Date.now().toString();
@@ -4603,11 +4613,10 @@ showToast("အပိုင်းကို အောင်မြင်စွာ �
 
                       const token = Math.random().toString(36).substring(2, 12);
 await setDoc(doc(db, "Users", currentUser.username), { 
-    ...updatedUser, 
     tgToken: token, 
     tgShow: miniVipModalShow.show.id, 
     tgEp: miniVipModalShow.epIndex 
-});
+}, { merge: true });
 const botUsername = "Jbsehunjae_vip_bot";
 window.location.href = `https://t.me/${botUsername}?start=${token}`;
                    } else {
