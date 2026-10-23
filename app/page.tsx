@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 // Firebase Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment, startAfter, getAggregateFromServer, sum } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, orderBy, limit, getCountFromServer, increment, startAfter, getAggregateFromServer, sum, runTransaction, arrayUnion } from "firebase/firestore";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, EmailAuthProvider, reauthenticateWithCredential, sendPasswordResetEmail } from "firebase/auth";
 import {
   Play, Lock, Unlock, Search, User, Coins, Sparkles, X, Plus, Edit, Trash2, 
@@ -234,6 +234,59 @@ export default function SweetieWorldApp() {
   const [promotions, setPromotions] = useState<PromoItem[]>([]);
   const [faqs, setFaqs] = useState<ContentItem[]>([]);
   const [pointRequests, setPointRequests] = useState<PointRequest[]>([]);
+  const [approvedMethodStats, setApprovedMethodStats] = useState<Record<string, {count: number, amount: number}>>({});
+
+  // Read 1 ခါတည်းဖြင့် Approved Transactions အနှစ်ချုပ်ကို ဆွဲယူရန်နှင့် Update လုပ်ရန်
+  const fetchOrInitPointStats = async () => {
+    try {
+      const statRef = doc(db, "SiteData", "pointStats");
+      const statSnap = await getDoc(statRef);
+      if (statSnap.exists() && statSnap.data().data) {
+        setApprovedMethodStats(statSnap.data().data);
+      } else {
+        const q = query(collection(db, "PointRequests"), where("status", "==", "approved"));
+        const snap = await getDocs(q);
+        const stats: Record<string, {count: number, amount: number}> = {};
+        snap.forEach(d => {
+          const r = d.data() as PointRequest;
+          const prov = r.provider || 'Unknown';
+          const amt = Number(r.amount) || 0;
+          if (!stats[prov]) stats[prov] = { count: 0, amount: 0 };
+          stats[prov].count += 1;
+          stats[prov].amount += amt;
+        });
+        await setDoc(statRef, { data: stats });
+        setApprovedMethodStats(stats);
+      }
+    } catch (e) {
+      console.error("PointStats Error:", e);
+    }
+  };
+
+  const updatePointStats = async (provider: string, countDelta: number, amountDelta: number) => {
+    const prov = provider || 'Unknown';
+    try {
+      const statRef = doc(db, "SiteData", "pointStats");
+      let updatedStats: Record<string, {count: number, amount: number}> = {};
+      await runTransaction(db, async (transaction) => {
+        const statSnap = await transaction.get(statRef);
+        const currentData = (statSnap.exists() && statSnap.data().data) ? { ...statSnap.data().data } : { ...approvedMethodStats };
+        const current = currentData[prov] || { count: 0, amount: 0 };
+        const newCount = Math.max(0, (Number(current.count) || 0) + countDelta);
+        const newAmount = Math.max(0, (Number(current.amount) || 0) + Number(amountDelta));
+        if (newCount === 0 && newAmount === 0) {
+          delete currentData[prov];
+        } else {
+          currentData[prov] = { count: newCount, amount: newAmount };
+        }
+        transaction.set(statRef, { data: currentData });
+        updatedStats = currentData;
+      });
+      setApprovedMethodStats(updatedStats);
+    } catch (e) {
+      console.error("Update PointStats Error:", e);
+    }
+  };
   const [paymentProviders, setPaymentProviders] = useState(INITIAL_PROVIDERS);
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(DEFAULT_CONFIG);
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
@@ -518,6 +571,10 @@ export default function SweetieWorldApp() {
   const [editIdCodes, setEditIdCodes] = useState<Record<string, string>>({});
   const [isSubmittingPoint, setIsSubmittingPoint] = useState(false);
   const isSubmittingPointRef = useRef(false);
+  const [processingReqIds, setProcessingReqIds] = useState<Record<string, boolean>>({});
+  const processingReqRef = useRef<Record<string, boolean>>({});
+  const [isBuyingVip, setIsBuyingVip] = useState(false);
+  const isBuyingVipRef = useRef(false);
   const [editUserModal, setEditUserModal] = useState<{isOpen: boolean, mode: 'create'|'edit', oldUsername?: string}>({isOpen: false, mode: 'create'});
   const [editUserForm, setEditUserForm] = useState<UserData>({username: '', email: '', password: '', role: 'user', points: 0, vip: false, unlockedShows: [], createdAt: '', lastLoginAt: '', pointHistory: []});
   const [editUserRemark, setEditUserRemark] = useState(''); 
@@ -716,18 +773,28 @@ export default function SweetieWorldApp() {
             fetchPaymentProviders()
         ]);
 
-        const savedUser = localStorage.getItem('jbsehunjaes_auth');
+
+	const savedUser = localStorage.getItem('jbsehunjaes_auth');
         const currentUserData = loadedUsers ? loadedUsers.find((u: any) => u.username === savedUser) : null;
         if (currentUserData && currentUserData.role === 'admin') {
-            const pQ = query(collection(db, "PointRequests"), orderBy("date", "desc"), limit(100));
-            const lQ = query(collection(db, "AdminLogs"), orderBy("date", "desc"), limit(100));
-            const nQ = query(collection(db, "Notifications"), orderBy("date", "desc"), limit(100));
+            const pQ = query(collection(db, "PointRequests"), orderBy("date", "desc"), limit(50));
+            const lQ = query(collection(db, "AdminLogs"), orderBy("date", "desc"), limit(30));
+            const nQ = query(collection(db, "Notifications"), orderBy("date", "desc"), limit(30));
+            const uQ = query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(10));
             
-            const [pSnap, lSnap, nSnap] = await Promise.all([getDocs(pQ), getDocs(lQ), getDocs(nQ)]);
+            const [pSnap, lSnap, nSnap, uSnap, countSnap] = await Promise.all([
+               getDocs(pQ), getDocs(lQ), getDocs(nQ), getDocs(uQ),
+               getCountFromServer(collection(db, "Users"))
+            ]);
             
             setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
             setAdminLogs(lSnap.docs.map(d => d.data() as AdminLogData));
-            setNotifications(nSnap.docs.map(d => d.data() as NotificationData));
+            const loadedNotis = nSnap.docs.map(d => d.data() as NotificationData).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            setNotifications(loadedNotis);
+            if (!uSnap.empty) setUsers(uSnap.docs.map(d => d.data() as UserData));
+            setTotalUsersCount(countSnap.data().count);
+            await fetchOrInitPointStats();
+            lastSyncTime.current = Date.now();
         }
         
         setIsDataFetched(true); 
@@ -760,11 +827,10 @@ export default function SweetieWorldApp() {
     } 
   }, [isInitialLoad]); 
 
-	const lastSyncTime = useRef<number>(0);
+  const lastSyncTime = useRef<number>(0);
 
   const syncLatestData = async (force = false) => {
-    // Force မဟုတ်လျှင် (Tab ပြောင်းရုံသာဖြစ်ပြီး) ၁ မိနစ်အတွင်း Sync လုပ်ထားပြီးသားဆိုပါက Read အပိုမကုန်စေရန် ကျော်သွားမည်
-    if (!force && Date.now() - lastSyncTime.current < 60000 && users.length > 1) {
+    if (!force && Date.now() - lastSyncTime.current < 60000) {
       return;
     }
 
@@ -772,15 +838,17 @@ export default function SweetieWorldApp() {
     try {
       if (currentUser?.role === 'admin') {
          const [pSnap, lSnap, nSnap, uSnap] = await Promise.all([
-            getDocs(query(collection(db, "PointRequests"), orderBy("date", "desc"), limit(100))),
-            getDocs(query(collection(db, "AdminLogs"), orderBy("date", "desc"), limit(100))),
-            getDocs(query(collection(db, "Notifications"), orderBy("date", "desc"), limit(100))),
+            getDocs(query(collection(db, "PointRequests"), orderBy("date", "desc"), limit(50))),
+            getDocs(query(collection(db, "AdminLogs"), orderBy("date", "desc"), limit(30))),
+            getDocs(query(collection(db, "Notifications"), orderBy("date", "desc"), limit(30))),
             getDocs(query(collection(db, "Users"), orderBy("lastLoginAt", "desc"), limit(10)))
          ]);
 
          setPointRequests(pSnap.docs.map(d => d.data() as PointRequest));
          setAdminLogs(lSnap.docs.map(d => d.data() as AdminLogData));
-         setNotifications(nSnap.docs.map(d => d.data() as NotificationData));
+         const loadedNotis = nSnap.docs.map(d => d.data() as NotificationData).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+         setNotifications(loadedNotis);
+         await fetchOrInitPointStats();
 
          try {
              const countSnap = await getCountFromServer(collection(db, "Users"));
@@ -889,12 +957,23 @@ export default function SweetieWorldApp() {
   }, [searchQuery]);
 
 
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "categories"), { data: categories }), 2000); return () => clearTimeout(t); } }, [categories]);
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "platforms"), { data: platforms }), 2000); return () => clearTimeout(t); } }, [platforms]);
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "promotions"), { data: promotions }), 2000); return () => clearTimeout(t); } }, [promotions]);
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "faqs"), { data: faqs }), 2000); return () => clearTimeout(t); } }, [faqs]);
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }), 2000); return () => clearTimeout(t); } }, [paymentProviders]);
-  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig }), 2000); return () => clearTimeout(t); } }, [siteConfig]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "promotions"), { data: promotions }), 1500); return () => clearTimeout(t); } }, [promotions]);
+  useEffect(() => { if (currentUser?.role === 'admin' && isReadyToSave.current && !isSyncing.current) { const t = setTimeout(() => setDoc(doc(db, "SiteData", "faqs"), { data: faqs }), 1500); return () => clearTimeout(t); } }, [faqs]);
+
+  const handleSaveAllSettings = async () => {
+    try {
+      await Promise.all([
+        setDoc(doc(db, "SiteData", "categories"), { data: categories }),
+        setDoc(doc(db, "SiteData", "platforms"), { data: platforms }),
+        setDoc(doc(db, "SiteData", "paymentProviders"), { data: paymentProviders }),
+        setDoc(doc(db, "SiteData", "siteConfig"), { data: siteConfig })
+      ]);
+      showToast(t.msgUserSaved);
+    } catch (error) {
+      console.error("Save settings error:", error);
+      showToast("Settings သိမ်းဆည်းရာတွင် အမှားအယွင်းရှိနေပါသည်။");
+    }
+  };
 
   // NEW: Direct Link ဖြင့် ဝင်လာပါက လက်ရှိ ၁၀ ကားထဲမပါလျှင် Database မှ အဟောင်းကားကို တိုက်ရိုက်လှမ်းဆွဲမည့် စနစ်
   useEffect(() => {
@@ -1109,13 +1188,12 @@ export default function SweetieWorldApp() {
         }
 
 
-} else if (authMode === 'login') {
+	} else if (authMode === 'login') {
         const rawInput = authForm.username.trim();
         const lowerInput = rawInput.toLowerCase();
         let userEmailForAuth = lowerInput;
         let preFetchedUser: UserData | null = null;
 
-        // Email မဟုတ်ဘဲ Username ဖြင့် ဝင်ခဲ့လျှင် ၁ ကြိမ်တည်း ဆွဲယူပြီး ပြန်သုံးမည် (Read အပိုမကုန်စေရန်)
         if (!lowerInput.includes('@')) {
            const docSnap = await getDoc(doc(db, "Users", rawInput));
            if (docSnap.exists()) {
@@ -1127,29 +1205,31 @@ export default function SweetieWorldApp() {
         }
 
         try {
-           // Firebase Auth ဖြင့် လုံခြုံစွာ Login ဝင်မည်
            await signInWithEmailAndPassword(auth, userEmailForAuth, authForm.password);
            
-           // အောင်မြင်ပါက Database မှ User အချက်အလက်များကို ဆွဲယူမည်
            let userDoc: UserData | null = preFetchedUser;
            if (!userDoc && lowerInput.includes('@')) {
-               const emailQuery = query(collection(db, "Users"), where("email", "==", lowerInput), limit(1));
+               const emailVariants = Array.from(new Set([lowerInput, rawInput]));
+               const emailQuery = query(collection(db, "Users"), where("email", "in", emailVariants), limit(1));
                const emailSnap = await getDocs(emailQuery);
                if (!emailSnap.empty) userDoc = emailSnap.docs[0].data() as UserData;
            }
 
            if (userDoc) {
-               const updatedUser = { ...userDoc, lastLoginAt: new Date().toISOString() };
-               await setDoc(doc(db, "Users", updatedUser.username), updatedUser);
+               const nowIso = new Date().toISOString();
+               const updatedUser = { ...userDoc, points: Number(userDoc.points) || 0, lastLoginAt: nowIso };
+               await setDoc(doc(db, "Users", updatedUser.username), { lastLoginAt: nowIso }, { merge: true });
                setCurrentUser(updatedUser);
+               setUsers(prev => prev.some(u => u.username === updatedUser.username) ? prev.map(u => u.username === updatedUser.username ? updatedUser : u) : [updatedUser, ...prev]);
                if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
                showToast(t.msgLoginSucc);
                setAuthModalOpen(false);
                setAuthForm({ username: '', email: '', password: '' });
                setShowWelcomePromo(true);
+           } else {
+               setAuthError(t.msgWrong);
            }
         } catch (error: any) {
-            // 🌟 User အဟောင်းများကို System အသစ်သို့ Auto ပြောင်းပေးမည့် နေရာဖြစ်သည်
             const legacyUser = preFetchedUser || (await (async () => {
                 const snap = await getDoc(doc(db, "Users", rawInput));
                 return snap.exists() ? (snap.data() as UserData) : null;
@@ -1159,14 +1239,12 @@ export default function SweetieWorldApp() {
                 try {
                     await createUserWithEmailAndPassword(auth, legacyUser.email, authForm.password);
                     const { password, ...restData } = legacyUser;
-                    
                     const updatedUser: UserData = { 
                         ...restData, 
+                        points: Number(restData.points) || 0,
                         lastLoginAt: new Date().toISOString() 
                     };
-                    
-                    await setDoc(doc(db, "Users", rawInput), updatedUser);
-                    
+                    await setDoc(doc(db, "Users", updatedUser.username), updatedUser);
                     setCurrentUser(updatedUser);
                     if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
                     showToast(t.msgLoginSucc);
@@ -1179,10 +1257,8 @@ export default function SweetieWorldApp() {
             }
         }
       } else if (authMode === 'forgot') {
-          // --- FORGOT PASSWORD စနစ်သစ် ---
           const inputEmail = authForm.email.trim().toLowerCase();
           if (!inputEmail) return setAuthError("ကျေးဇူးပြု၍ သင့် Email ကို ရိုက်ထည့်ပါ။");
-          
           try {
               await sendPasswordResetEmail(auth, inputEmail);
               setAlertModal({ message: "Password အသစ်ချိန်းရန် Link အား သင့် Email သို့ ပို့ပေးလိုက်ပါသည်။ Inbox တွင် မတွေ့ပါက Spam ဖိုင်ဒါကိုပါ ဝင်ရောက်စစ်ဆေးပေးပါ။" });
@@ -1200,34 +1276,21 @@ export default function SweetieWorldApp() {
   const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
-    
-    // Password အသစ် နှစ်ခု တူ/မတူ စစ်ဆေးခြင်း
-    if (pwdForm.new !== pwdForm.confirm) {
-       return setAlertModal({ message: t.pwdMismatch });
-    }
-    // Password အသစ်သည် အနည်းဆုံး ၆ လုံး ရှိ/မရှိ စစ်ဆေးခြင်း
-    if (pwdForm.new.length < 6) {
-       return setAlertModal({ message: "စကားဝှက် (Password) အနည်းဆုံး ၆ လုံး ရှိရပါမည်။" });
-    }
+    if (pwdForm.new !== pwdForm.confirm) return setAlertModal({ message: t.pwdMismatch });
+    if (pwdForm.new.length < 6) return setAlertModal({ message: "စကားဝှက် (Password) အနည်းဆုံး ၆ လုံး ရှိရပါမည်။" });
 
     const user = auth.currentUser;
-    
     if (user && user.email) {
         try {
-            // ၁။ အရင်ဆုံး Old Password မှန်/မမှန် Firebase Auth ဖြင့် လုံခြုံစွာ စစ်ဆေးမည်
             const credential = EmailAuthProvider.credential(user.email, pwdForm.old);
             await reauthenticateWithCredential(user, credential);
-
-            // ၂။ Old Password မှန်ကန်ပါက Firebase Auth တွင် Password အသစ်ပြောင်းပေးမည်
             await updatePassword(user, pwdForm.new);
-            
             showToast("Password updated successfully!");
             setChangePwdModalOpen(false);
             setPwdForm({ old: '', new: '', confirm: '' });
             setShowPwdOld(false); setShowPwdNew(false); setShowPwdConfirm(false);
         } catch (error: any) {
             console.error(error);
-            // Old Password မှားနေပါက သတိပေးမည်
             setAlertModal({ message: t.wrongOldPwd }); 
         }
     } else {
@@ -1235,49 +1298,48 @@ export default function SweetieWorldApp() {
     }
   };
 
- const handlePointSubmit = async (e: React.FormEvent) => {
+  const handlePointSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !selectedProvider || !idCodeInput.trim() || !amountInput.trim()) return;
-    if (isSubmittingPointRef.current) return; // ခလုတ်ကို ဆင့်နှိပ်မိပါက ချက်ချင်းတားဆီးမည်
+    const cleanIdCode = idCodeInput.trim().replace(/\s+/g, '');
+    const cleanAmount = Number(amountInput);
+    if (!currentUser || !selectedProvider || !cleanIdCode || !cleanAmount || cleanAmount <= 0) return;
+    if (isSubmittingPointRef.current) return;
 
     isSubmittingPointRef.current = true;
     setIsSubmittingPoint(true);
 
     try {
-      // --- ၁။ Database ပေါ်ရှိ Point Requests Collection တွင် Duplicate ဖြစ်/မဖြစ် အတိအကျလှမ်းစစ်မည် (1 Read သာကုန်ကျမည်) ---
-      const checkQuery = query(collection(db, "PointRequests"), where("idCode", "==", idCodeInput.trim()));
+      const checkQuery = query(collection(db, "PointRequests"), where("idCode", "==", cleanIdCode), limit(1));
       const checkSnap = await getDocs(checkQuery);
       
-      // အကယ်၍ ဒီ ID နဲ့ တောင်းဆိုထားတာ ရှိနှင့်ပြီးသားဆိုရင် (Duplicate ဖြစ်ရင်)
       if (!checkSnap.empty) {
          return setAlertModal({ message: t.duplicateId });
       }
 
+      const reqId = `${Date.now()}_${currentUser.username}`;
       const newReq: PointRequest = {
-        id: Date.now().toString(), username: currentUser.username, provider: selectedProvider.name,
-        idCode: idCodeInput.trim(), requestedAmount: Number(amountInput), date: new Date().toISOString(), status: 'pending'
+        id: reqId, username: currentUser.username, provider: selectedProvider.name,
+        idCode: cleanIdCode, requestedAmount: cleanAmount, date: new Date().toISOString(), status: 'pending'
       };
 
       const newNoti: NotificationData = {
-        id: Date.now().toString()+'_noti', targetUser: 'admin',
-        message: `Point Request from ${currentUser.username} (ID: ${idCodeInput.trim()}) - Amount: ${amountInput}`,
+        id: `${reqId}_noti`, targetUser: 'admin',
+        message: `Point Request from ${currentUser.username} (ID: ${cleanIdCode}) - Amount: ${cleanAmount}`,
         date: new Date().toISOString(), isRead: false, actionType: 'point_request'
       };
       
-      setNotifications(prev => [newNoti, ...prev]);
-      setPointRequests(prev => [newReq, ...prev]);
-      
-      // 🌟 Database သို့ သိမ်းဆည်းခြင်း (Collection အမှန်ထဲသို့သာ တိုက်ရိုက်သိမ်းမည်)
       await Promise.all([
          setDoc(doc(db, "Notifications", newNoti.id), newNoti),
          setDoc(doc(db, "PointRequests", newReq.id), newReq)
       ]);
 
+      setNotifications(prev => [newNoti, ...prev]);
+      setPointRequests(prev => [newReq, ...prev.filter(r => r.id !== newReq.id)]);
+
       showToast(t.msgPointSent);
       setIdCodeInput('');
       setAmountInput('');
       setPayStep('history');
-      
     } catch (error) {
       console.error("Error submitting point request: ", error);
       setAlertModal({ message: "Network Error. Please try again." });
@@ -1286,122 +1348,124 @@ export default function SweetieWorldApp() {
       setIsSubmittingPoint(false);
     }
   };
-	
 
   const handleAdminSaveUser = async () => {
-  if (!editUserRemark.trim() && editUserModal.mode === 'edit') return setAlertModal({ message: "လုပ်ဆောင်ရသည့် အကြောင်းရင်း (Remark) ကို ထည့်ပေးပါ။" });
-  
-  const adjustment = Number(editUserForm.pointAdjustment) || 0;
-  const finalPoints = editUserForm.points + adjustment;
+    if (!editUserRemark.trim() && editUserModal.mode === 'edit') return setAlertModal({ message: "လုပ်ဆောင်ရသည့် အကြောင်းရင်း (Remark) ကို ထည့်ပေးပါ။" });
+    
+    const adjustment = Number(editUserForm.pointAdjustment) || 0;
+    const { pointAdjustment, ...cleanEditUserForm } = editUserForm;
 
-  const { pointAdjustment, ...cleanEditUserForm } = editUserForm;
+    isSyncing.current = true;
+    try {
+      if (editUserModal.mode === 'create') {
+        const targetUsername = editUserForm.username.trim();
+        const rawTargetEmail = (editUserForm.email || '').trim();
+        const targetEmail = rawTargetEmail.toLowerCase();
+        const rawPwd = (editUserForm.password || '').trim();
 
-  isSyncing.current = true; // Auto-sync ကို ခဏပိတ်မည်
+        if (rawPwd.length < 6) {
+          isSyncing.current = false;
+          return setAlertModal({ message: "စကားဝှက် (Password) အနည်းဆုံး (၆) လုံး ရှိရပါမည်။" });
+        }
 
-  try {
-    let updatedUsersList;
+        const [uSnap, lowerUSnap, eSnap] = await Promise.all([
+          getDoc(doc(db, "Users", targetUsername)),
+          targetUsername !== targetUsername.toLowerCase()
+            ? getDoc(doc(db, "Users", targetUsername.toLowerCase()))
+            : Promise.resolve(null),
+          getDocs(query(collection(db, "Users"), where("email", "in", Array.from(new Set([targetEmail, rawTargetEmail]))), limit(1)))
+        ]);
 
-    if (editUserModal.mode === 'create') {
-      const targetUsername = editUserForm.username.trim();
-      const rawTargetEmail = (editUserForm.email || '').trim();
-      const targetEmail = rawTargetEmail.toLowerCase();
-
-      // ၁။ Database တစ်ခုလုံးတွင် Username နှင့် Email ရှိ/မရှိ အတိအကျ စစ်ဆေးမည်
-      const [uSnap, lowerUSnap, eSnap] = await Promise.all([
-        getDoc(doc(db, "Users", targetUsername)),
-        targetUsername !== targetUsername.toLowerCase()
-          ? getDoc(doc(db, "Users", targetUsername.toLowerCase()))
-          : Promise.resolve(null),
-        getDocs(query(collection(db, "Users"), where("email", "in", Array.from(new Set([targetEmail, rawTargetEmail]))), limit(1)))
-      ]);
-
-      if (uSnap.exists() || (lowerUSnap && lowerUSnap.exists()) || !eSnap.empty) {
-        isSyncing.current = false;
-        return setAlertModal({ message: t.msgExists });
-      }
-
-      // ၂။ Firebase Auth တွင် အကောင့်အရင်ဖန်တီးမည် (Admin အကောင့်ထဲမှ မထွက်ကျစေရန် Secondary Auth ကို သုံးပါမည်)
-      try {
-          await createUserWithEmailAndPassword(secondaryAuth, targetEmail, (editUserForm.password || '').trim());
-          await secondaryAuth.signOut(); 
-      } catch (error: any) {
+        if (uSnap.exists() || (lowerUSnap && lowerUSnap.exists()) || !eSnap.empty) {
           isSyncing.current = false;
           return setAlertModal({ message: t.msgExists });
+        }
+
+        try {
+            await createUserWithEmailAndPassword(secondaryAuth, targetEmail, rawPwd);
+            await secondaryAuth.signOut(); 
+        } catch (error: any) {
+            isSyncing.current = false;
+            return setAlertModal({ message: t.msgExists });
+        }
+
+        const finalPoints = (Number(editUserForm.points) || 0) + adjustment;
+        const newUser: UserData = {
+           ...cleanEditUserForm, 
+           points: finalPoints,
+           username: targetUsername,
+           email: targetEmail,
+           createdAt: new Date().toISOString(),
+           lastLoginAt: new Date().toISOString(),
+           pointHistory: []
+        };
+        delete newUser.password;
+
+        await setDoc(doc(db, "Users", newUser.username), newUser);
+        setUsers(prev => [newUser, ...prev]);
+      } else {
+        const targetUsername = editUserModal.oldUsername || editUserForm.username.trim();
+        const userRef = doc(db, "Users", targetUsername);
+        let savedUserObj: UserData | null = null;
+
+        await runTransaction(db, async (transaction) => {
+          const userSnap = await transaction.get(userRef);
+          if (!userSnap.exists()) throw new Error("User not found in database");
+          const dbUser = userSnap.data() as UserData;
+          const currentDbPoints = Number(dbUser.points) || 0;
+          const finalPoints = currentDbPoints + adjustment;
+          let newPointHistory = dbUser.pointHistory || [];
+
+          if (adjustment !== 0) {
+            const newLog: UserHistoryLog = {
+              id: Date.now().toString(),
+              type: 'admin_bonus',
+              title: adjustment > 0 ? `Admin Added Points (${editUserRemark || 'No remark'})` : `Admin Deducted Points (${editUserRemark || 'No remark'})`,
+              amount: adjustment,
+              date: new Date().toISOString(),
+              remainingBalance: finalPoints
+            };
+            newPointHistory = [newLog, ...newPointHistory];
+          }
+
+          savedUserObj = {
+            ...dbUser,
+            role: editUserForm.role,
+            email: editUserForm.email.trim(),
+            points: finalPoints,
+            pointHistory: newPointHistory
+          };
+          transaction.set(userRef, savedUserObj);
+        });
+
+        if (savedUserObj) {
+          const finalUser = savedUserObj as UserData;
+          setUsers(prev => prev.some(u => u.username === finalUser.username) ? prev.map(u => u.username === finalUser.username ? finalUser : u) : [finalUser, ...prev]);
+          if (currentUser?.username === finalUser.username) setCurrentUser(finalUser);
+          if (userDetailModal?.username === finalUser.username) setUserDetailModal(finalUser);
+        }
+
+        if (editUserRemark.trim() && currentUser) {
+           const newLog: AdminLogData = { id: Date.now().toString()+'_log', adminName: currentUser.username, targetUser: targetUsername, action: 'Edit User Profile', remark: editUserRemark.trim(), date: new Date().toISOString() };
+           setAdminLogs(prev => [newLog, ...prev]);
+           await setDoc(doc(db, "AdminLogs", newLog.id), newLog);
+        }
       }
 
-      const newUser = {
-         ...cleanEditUserForm, 
-         points: finalPoints,
-         username: targetUsername,
-         email: targetEmail,
-         createdAt: new Date().toISOString(),
-         lastLoginAt: new Date().toISOString(),
-         pointHistory: []
-      };
-      delete newUser.password; // Admin panel တွင် Password ကို အတိုင်းသား ဆက်မသိမ်းတော့ပါ
-
-      updatedUsersList = [newUser, ...users];
-      setUsers(updatedUsersList);
-    } else {
-      const oldUser = users.find(u => u.username === editUserModal.oldUsername);
-      let newPointHistory = oldUser?.pointHistory || [];
-      
-      if (oldUser && finalPoints !== oldUser.points) { 
-         const pointDiff = finalPoints - oldUser.points;
-         const newLog: UserHistoryLog = {
-            id: Date.now().toString(),
-            type: 'admin_bonus',
-            title: pointDiff > 0 ? `Admin Added Points (${editUserRemark || 'No remark'})` : `Admin Deducted Points (${editUserRemark || 'No remark'})`,
-            amount: pointDiff,
-            date: new Date().toISOString(),
-            remainingBalance: finalPoints
-         };
-         newPointHistory = [newLog, ...newPointHistory];
-      }
-
-      const updatedUser = {
-         ...cleanEditUserForm, 
-         points: finalPoints,
-         username: editUserForm.username.trim(), 
-         email: editUserForm.email.trim(),
-         pointHistory: newPointHistory
-      };
-
-      updatedUsersList = users.map(u => u.username === editUserModal.oldUsername ? updatedUser : u);
-      setUsers(updatedUsersList);
-      if(currentUser?.username === editUserModal.oldUsername) setCurrentUser(updatedUser);
-      
-      if(editUserRemark.trim() && currentUser) {
-         const newLog: AdminLogData = { id: Date.now().toString()+'_log', adminName: currentUser.username, targetUser: editUserForm.username.trim(), action: 'Edit User Profile', remark: editUserRemark.trim(), date: new Date().toISOString() };
-         const newNoti: NotificationData = { id: Date.now().toString()+'_noti', targetUser: editUserForm.username.trim(), message: `Admin မှ သင့်အကောင့်အား ပြင်ဆင်မှုပြုလုပ်ခဲ့ပါသည်။ (Admin Action)`, detail: editUserRemark.trim(), date: new Date().toISOString(), isRead: false, actionType: 'admin_edit' };
-         
-         setAdminLogs([newLog, ...adminLogs]);
-setNotifications([newNoti, ...notifications]);
-
-// Array အထုပ်ကြီးဖြင့်သိမ်းခြင်းကို ဖျက်၍ Collection အသစ်ထဲသို့ သီးခြားစီ Document ဖန်တီး၍ တိုက်ရိုက်သိမ်းမည်
-await setDoc(doc(db, "AdminLogs", newLog.id), newLog);
-await setDoc(doc(db, "Notifications", newNoti.id), newNoti);
-      }
+      showToast(t.msgUserSaved);
+      setEditUserModal({isOpen: false, mode: 'create'});
+      setShowAuthPassword(false);
+      setEditUserRemark('');
+    } catch (error) {
+      console.error("Error saving user: ", error);
+      setAlertModal({ message: "User သိမ်းဆည်းရာတွင် အမှားအယွင်းဖြစ်ပေါ်နေပါသည်။" });
+    } finally {
+      isSyncing.current = false;
     }
+  };
 
-    // Database ပေါ် သေချာရောက်အောင် သိမ်းမည်
-    const targetSaveUser = editUserModal.mode === 'create' ? updatedUsersList[0] : updatedUsersList.find(u => u.username === editUserModal.oldUsername);
-if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targetSaveUser);
-
-    showToast(t.msgUserSaved);
-    setEditUserModal({isOpen: false, mode: 'create'});
-    setShowAuthPassword(false);
-    setEditUserRemark('');
-
-  } catch (error) {
-    console.error("Error saving user: ", error);
-  } finally {
-    isSyncing.current = false; // Auto-sync ပြန်ဖွင့်မည်
-  }
-};
 
   const handleNotiClick = (n: NotificationData) => {
-     // ၁။ Local မှာ "ဖတ်ပြီး" လို့ အရင်ပြောင်းမည်
      const updatedNotis = notifications.map(x => {
        if (x.id === n.id) {
          if (x.targetUser === 'all' && currentUser) {
@@ -1417,47 +1481,43 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
      });
      setNotifications(updatedNotis);
      
-     // ၂။ Collection အသစ်ဆီသို့ "ဖတ်ပြီးကြောင်း" တိုက်ရိုက်လှမ်းသိမ်းမည်
      const targetNoti = updatedNotis.find(x => x.id === n.id);
      if (targetNoti) {
          setDoc(doc(db, "Notifications", n.id), targetNoti, { merge: true });
      }
 
      setNotiDropdownOpen(false);
-     if(n.actionType === 'point_request') { setAdminDashboardOpen(true); setAdminActiveTab('points'); } 
+     if (n.actionType === 'point_request') { setAdminDashboardOpen(true); setAdminActiveTab('points'); } 
      else if (n.actionType === 'point_approve' || n.actionType === 'point_reject') { setPayStep('history'); setPointModalOpen(true); } 
      else if (n.actionType === 'admin_edit') { setUserMenuTab('messages'); setUserMenuOpen(true); }
      else if (n.actionType === 'new_user') {
-      setAdminDashboardOpen(true);
-      setAdminActiveTab('users');
-      const username = n.message.replace('New User Registered: ', '');
-      const user = users.find(u => u.username === username);
-      if (user) setUserDetailModal(user); // User Detail Box ကို အလိုအလျောက် ဖွင့်ပေးမည်
-   }
-   // NEW: ဇာတ်ကားသစ် သို့မဟုတ် အပိုင်းသစ် Noti ကိုနှိပ်လျှင် ဇာတ်ကားဆီ တိုက်ရိုက်သွားမည်
-   else if (n.actionType === 'new_upload' || n.actionType === 'ep_update') {
-      // Noti စာသားထဲမှ " " ကြားရှိ ဇာတ်ကားနာမည်ကို ဆွဲထုတ်မည်
-      const match = n.message.match(/"([^"]+)"/);
-      if (match) {
-         const title = match[1];
-         const foundShow = shows.find(s => s.title_mm === title || s.title_en === title);
-         if (foundShow) {
-            setAdminDashboardOpen(false); // Admin Panel ပွင့်နေရင် ပိတ်မည်
-            setActiveTab('home'); // Home Tab သို့ ပြောင်းမည်
-            setSelectedShow(foundShow); // ဇာတ်ကား Box ကို ဖွင့်မည်
-            window.scrollTo({top:0, behavior: 'smooth'});
-            return;
-         }
-      }
-      // ဇာတ်ကားကို ရှာမတွေ့ပါက (သို့မဟုတ် ဖျက်လိုက်မိပါက) ပုံမှန်အတိုင်း Inbox ကိုသာ ပြမည်
-      setUserMenuTab('messages');
-      setUserMenuOpen(true);
-   }
-};
+       setAdminDashboardOpen(true);
+       setAdminActiveTab('users');
+       const username = n.message.replace('New User Registered: ', '');
+       const user = users.find(u => u.username === username);
+       if (user) setUserDetailModal(user);
+     }
+     else if (n.actionType === 'new_upload' || n.actionType === 'ep_update') {
+       const match = n.message.match(/"([^"]+)"/);
+       if (match) {
+          const title = match[1];
+          const foundShow = shows.find(s => s.title_mm === title || s.title_en === title);
+          if (foundShow) {
+             setAdminDashboardOpen(false);
+             setActiveTab('home');
+             setSelectedShow(foundShow);
+             window.scrollTo({top:0, behavior: 'smooth'});
+             return;
+          }
+       }
+       setUserMenuTab('messages');
+       setUserMenuOpen(true);
+     }
+  };
 
   const getRequiredPoints = (show: VideoCardData) => {
-    const unreleasedCount = show.episodes.filter(ep => !ep.links || ep.links.length === 0).length;
-    return unreleasedCount * (show.pointsPerEp ?? 20);
+    const chargeableCount = show.episodes.filter(ep => !ep.links || ep.links.length === 0 || ep.isVipOnly).length;
+    return chargeableCount * (Number(show.pointsPerEp) ?? 20);
   };
 
   // ==========================================
@@ -1835,39 +1895,28 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
               )}
 
         
-
-              {/* BIGGER POINTS BUTTON */}
+		{/* BIGGER POINTS BUTTON */}
               <button onClick={async () => {
                 try {
                   if (currentUser?.role === 'admin') {
-                      // Admin ဆိုလျှင် Sync အရင်လုပ်မည်
-                      syncLatestData(); 
+                      await syncLatestData(true); 
                   } else if (currentUser) {
-                      // --- အသစ်ပြင်ဆင်ထားသော အပိုင်း စတင်ပါပြီ ---
-                      
-                      // ၁။ User ရဲ့ နောက်ဆုံး Point Balance ကို (1 Read ဖြင့်သာ) ချက်ချင်းလှမ်းဆွဲပြီး Update လုပ်မည် (Refresh လုပ်စရာမလိုတော့ပါ)
-                      const uSnap = await getDoc(doc(db, "Users", currentUser.username));
+                      const [uSnap, pSnap] = await Promise.all([
+                        getDoc(doc(db, "Users", currentUser.username)),
+                        getDocs(query(collection(db, "PointRequests"), where("username", "==", currentUser.username)))
+                      ]);
                       if (uSnap.exists()) {
-                          setCurrentUser(uSnap.data() as UserData);
+                          const freshUser = uSnap.data() as UserData;
+                          setCurrentUser(freshUser);
+                          setUsers([freshUser]);
                       }
-
-                      // ၂။ Point History ဆွဲမည် (Firebase Index Error မတက်စေရန် orderBy ကိုဖြုတ်ပြီး limit(50) ဖြင့်သာ ဆွဲမည်)
-                      const q = query(collection(db, "PointRequests"), where("username", "==", currentUser.username), limit(50));
-                      const pSnap = await getDocs(q);
-                      
                       const userHistory = pSnap.docs.map(d => d.data() as PointRequest);
-                      // ရက်စွဲအလိုက် အသစ်ဆုံးကို အပေါ်ထားရန် Sort လုပ်မည်
                       userHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                      
-                      // နောက်ဆုံး ၂၀ ခုကိုသာ ယူပြီး State ထဲထည့်မည်
-                      setPointRequests(userHistory.slice(0, 20));
-                      
-                      // --- အသစ်ပြင်ဆင်ထားသော အပိုင်း ပြီးဆုံးပါပြီ ---
+                      setPointRequests(userHistory.slice(0, 30));
                   }
                 } catch (error) {
                   console.error("Point History Fetch Error:", error);
                 } finally {
-                  // Error တက်သည်ဖြစ်စေ၊ မတက်သည်ဖြစ်စေ Point Box ကို မဖြစ်မနေ ပွင့်စေမည်
                   setPayStep('menu'); 
                   setPointModalOpen(true);
                 }
@@ -2100,15 +2149,23 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                    let grandTotalCount = 0;
                    let grandTotalAmount = 0;
 
-                   filteredReqs.forEach(req => {
-                      const prov = req.provider || 'Unknown';
-                      const amt = req.amount || 0; // Only uses the actually approved amount
-                      if (!providerStats[prov]) providerStats[prov] = { count: 0, amount: 0 };
-                      providerStats[prov].count += 1;
-                      providerStats[prov].amount += amt;
-                      grandTotalCount += 1;
-                      grandTotalAmount += amt;
-                   });
+                   if (!(dashDateFrom && dashDateTo) && Object.keys(approvedMethodStats).length > 0) {
+                      Object.entries(approvedMethodStats).forEach(([prov, st]) => {
+                         providerStats[prov] = { count: st.count, amount: st.amount };
+                         grandTotalCount += st.count;
+                         grandTotalAmount += st.amount;
+                      });
+                   } else {
+                      filteredReqs.forEach(req => {
+                         const prov = req.provider || 'Unknown';
+                         const amt = req.amount || 0; // Only uses the actually approved amount
+                         if (!providerStats[prov]) providerStats[prov] = { count: 0, amount: 0 };
+                         providerStats[prov].count += 1;
+                         providerStats[prov].amount += amt;
+                         grandTotalCount += 1;
+                         grandTotalAmount += amt;
+                      });
+                   }
 
                    const maxAmount = Math.max(...Object.values(providerStats).map(p => p.amount), 1);
 
@@ -2341,7 +2398,6 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
               </div>
             )}
 
-
 	{adminActiveTab === 'points' && (
               <div className="animate-fade-in space-y-6">
                 <div className="flex justify-between items-center">
@@ -2368,94 +2424,117 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                             className="w-36 bg-zinc-900 border border-zinc-700 p-2 text-sm text-[#fcd385] font-mono rounded-lg focus:outline-none focus:border-[#fcd385]"
                           />
                           <input 
-                            type="number" min="1" placeholder="Amount" value={approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.requestedAmount || '')}
-                            onChange={(e) => setApproveAmounts({...approveAmounts, [req.id]: Number(e.target.value)})}
+                            type="number" min="1" placeholder="Amount" value={approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.requestedAmount ?? '')}
+                            onChange={(e) => setApproveAmounts({...approveAmounts, [req.id]: e.target.value === '' ? 0 : Number(e.target.value)})}
                             className="w-24 bg-zinc-900 border border-zinc-700 p-2 text-sm text-white rounded-lg focus:outline-none focus:border-[#fcd385]"
                           />
-                          <button onClick={async () => {
-  const amount = approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.requestedAmount || 0);
-  const finalIdCode = (editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode).trim() || req.idCode;
-  if (amount <= 0) return setAlertModal({ message: "Please enter a valid amount." });
-  
-  isSyncing.current = true; // Auto-sync ကို ခဏပိတ်မည်
-  try {
-    const newNoti: NotificationData = {
-      id: Date.now().toString()+'_noti', targetUser: req.username,
-      message: `ID ${finalIdCode} အတွက် Point ထည့်သွင်းပေးလိုက်ပါပြီ။`, detail: `+${amount} PTS ဖြည့်သွင်းပြီးပါပြီ။`,
-      date: new Date().toISOString(), isRead: false, actionType: 'point_approve'
-    };
+                          <button 
+                            disabled={!!processingReqIds[req.id]}
+                            onClick={async () => {
+                              if (processingReqRef.current[req.id]) return;
+                              const rawAmt = approveAmounts[req.id] !== undefined && approveAmounts[req.id] > 0 ? approveAmounts[req.id] : Number(req.requestedAmount || 0);
+                              const amount = Number(rawAmt);
+                              const finalIdCode = (editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode).trim() || req.idCode;
+                              if (!amount || amount <= 0) return setAlertModal({ message: "Please enter a valid amount." });
 
-    // 🌟 FIX: User Data ကို Firebase မှ တိုက်ရိုက်လှမ်းဆွဲမည် (Limit 50 ထဲ မပါလည်း Error မတက်တော့ပါ)
-    const userRef = doc(db, "Users", req.username);
-    const userSnap = await getDoc(userRef);
-    
-    if (!userSnap.exists()) {
-        showToast("Error: ဤ User ကို Database တွင် ရှာမတွေ့ပါ။");
-        isSyncing.current = false;
-        return;
-    }
-    const userData = userSnap.data() as UserData;
-    const updatedUserForUI = { ...userData, points: (userData.points || 0) + amount };
+                              processingReqRef.current[req.id] = true;
+                              setProcessingReqIds(prev => ({ ...prev, [req.id]: true }));
+                              isSyncing.current = true;
 
-    // ၁။ Firebase ပေါ်တွင် Point အတိအကျ ပေါင်းထည့်ရန် increment ကိုသုံးမည် (Database Overwrite မဖြစ်စေရန် merge သုံးထားသည်)
-    await setDoc(userRef, { points: increment(amount) }, { merge: true });
+                              try {
+                                const targetUsername = req.username.trim();
+                                const userRef = doc(db, "Users", targetUsername);
+                                const reqRef = doc(db, "PointRequests", req.id);
+                                let updatedUserForUI: UserData | null = null;
+                                let updatedReqObj: PointRequest | null = null;
 
-    // (UI ပေါ်ရှိ Local Users State တွင် ပါဝင်နေပါက Update လုပ်ပေးမည်)
-    setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUserForUI : u));
+                                await runTransaction(db, async (transaction) => {
+                                  const [userSnap, reqSnap] = await Promise.all([
+                                    transaction.get(userRef),
+                                    transaction.get(reqRef)
+                                  ]);
+                                  if (!userSnap.exists()) {
+                                    throw new Error("USER_NOT_FOUND");
+                                  }
+                                  if (reqSnap.exists() && reqSnap.data().status === 'approved') {
+                                    throw new Error("ALREADY_APPROVED");
+                                  }
+                                  const userData = userSnap.data() as UserData;
+                                  const newBalance = (Number(userData.points) || 0) + amount;
+                                  updatedUserForUI = { ...userData, points: newBalance };
+                                  updatedReqObj = {
+                                    ...req,
+                                    idCode: finalIdCode,
+                                    status: 'approved',
+                                    amount: amount,
+                                    requestedAmount: req.requestedAmount || amount,
+                                    remainingBalance: newBalance
+                                  };
+                                  transaction.update(userRef, { points: newBalance });
+                                  transaction.set(reqRef, updatedReqObj);
+                                });
 
-    // ၂။ PointRequests Collection ရှိ သက်ဆိုင်ရာ Document တစ်ခုတည်းကိုသာ Update လုပ်မည်
-    const updatedReq: PointRequest = { 
-        ...req, 
-        idCode: finalIdCode,
-        status: 'approved', 
-        amount: amount, 
-        remainingBalance: updatedUserForUI.points 
-    };
-    
-    await setDoc(doc(db, "PointRequests", req.id), updatedReq);
-    await setDoc(doc(db, "Notifications", newNoti.id), newNoti);
-
-    // Local UI ပြောင်းလဲခြင်း
-    setPointRequests(prev => prev.map(p => p.id === req.id ? updatedReq : p));
-    setNotifications(prev => [newNoti, ...prev]);
-
-    showToast(`${amount} ${t.msgApproved}`);
-  } catch (error) {
-    console.error("Error approving points: ", error);
-  } finally {
-    isSyncing.current = false; // Auto-sync ပြန်ဖွင့်မည်
-  }
-}} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4 py-2 rounded-lg font-bold transition-all flex-1 md:flex-none shadow-[0_4px_0_#047857] active:shadow-none active:translate-y-1">
-  {t.approveBtn}
-</button>
+                                if (updatedUserForUI && updatedReqObj) {
+                                  const finalUser = updatedUserForUI as UserData;
+                                  const finalReq = updatedReqObj as PointRequest;
+                                  setUsers(prevUsers => prevUsers.some(u => u.username === finalUser.username) ? prevUsers.map(u => u.username === finalUser.username ? finalUser : u) : [finalUser, ...prevUsers]);
+                                  if (currentUser?.username === finalUser.username) setCurrentUser(finalUser);
+                                  if (userDetailModal?.username === finalUser.username) setUserDetailModal(finalUser);
+                                  setPointRequests(prev => prev.map(p => p.id === req.id ? finalReq : p));
+                                  await updatePointStats(req.provider, 1, amount);
+                                  showToast(`${amount} ${t.msgApproved}`);
+                                }
+                              } catch (error: any) {
+                                console.error("Error approving points: ", error);
+                                if (error?.message === "USER_NOT_FOUND") {
+                                  setAlertModal({ message: `Error: "${req.username}" ကို Users Database တွင် ရှာမတွေ့ပါ။` });
+                                } else if (error?.message === "ALREADY_APPROVED") {
+                                  showToast("ဤ Request ကို အတည်ပြုပြီးသား ဖြစ်ပါသည်။");
+                                } else {
+                                  setAlertModal({ message: "Point ထည့်ပေးရာတွင် အင်တာနက် သို့မဟုတ် Database အမှားဖြစ်ပေါ်နေပါသည်။ ပြန်လည်ကြိုးစားပါ။" });
+                                }
+                              } finally {
+                                processingReqRef.current[req.id] = false;
+                                setProcessingReqIds(prev => ({ ...prev, [req.id]: false }));
+                                isSyncing.current = false;
+                              }
+                            }} 
+                            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs px-4 py-2 rounded-lg font-bold transition-all flex-1 md:flex-none shadow-[0_4px_0_#047857] active:shadow-none active:translate-y-1">
+                            {processingReqIds[req.id] ? 'Processing...' : t.approveBtn}
+                          </button>
                           
-                          {/* Reject with Remark 3D Modal */}
-                          <button onClick={() => {
+                          <button 
+                            disabled={!!processingReqIds[req.id]}
+                            onClick={() => {
                              const finalIdCode = (editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode).trim() || req.idCode;
                              setPromptModal({
                                title: t.confirmRejectTitle,
                                placeholder: t.rejectPlaceholder,
-                               onSubmit: (reason) => {
-                                 const newNoti: NotificationData = {
-                                   id: Date.now().toString()+'_noti', targetUser: req.username,
-                                   message: `ID ${finalIdCode} အတွက် ပယ်ချလိုက်ပါသည်။ Remark ကိုဖတ်ရန်နှိပ်ပါ။`, detail: reason,
-                                   date: new Date().toISOString(), isRead: false, actionType: 'point_reject'
-                                 };
-                                 const rejectedReq: PointRequest = { 
-                                     ...req, 
-                                     idCode: finalIdCode,
-                                     status: 'rejected', 
-                                     remark: reason 
-                                 };
-                                 setDoc(doc(db, "PointRequests", req.id), rejectedReq);
-                                 setDoc(doc(db, "Notifications", newNoti.id), newNoti);
-
-                                 setPointRequests(pointRequests.map(p => p.id === req.id ? rejectedReq : p));
-                                 setNotifications([newNoti, ...notifications]);
-                                 showToast("Request Rejected");
+                               onSubmit: async (reason) => {
+                                 if (processingReqRef.current[req.id]) return;
+                                 processingReqRef.current[req.id] = true;
+                                 setProcessingReqIds(prev => ({ ...prev, [req.id]: true }));
+                                 try {
+                                   const rejectedReq: PointRequest = { 
+                                       ...req, 
+                                       idCode: finalIdCode,
+                                       status: 'rejected', 
+                                       remark: reason 
+                                   };
+                                   await setDoc(doc(db, "PointRequests", req.id), rejectedReq);
+                                   setPointRequests(prev => prev.map(p => p.id === req.id ? rejectedReq : p));
+                                   setApproveAmounts(prev => { const next = { ...prev }; delete next[req.id]; return next; });
+                                   showToast("Request Rejected");
+                                 } catch (err) {
+                                   console.error("Reject error:", err);
+                                   setAlertModal({ message: "Reject လုပ်ရာတွင် အမှားအယွင်းဖြစ်ပေါ်နေပါသည်။" });
+                                 } finally {
+                                   processingReqRef.current[req.id] = false;
+                                   setProcessingReqIds(prev => ({ ...prev, [req.id]: false }));
+                                 }
                                }
                              });
-                          }} className="bg-red-800 hover:bg-red-700 text-white text-xs px-4 py-2 rounded-lg font-bold transition-all flex-1 md:flex-none shadow-[0_4px_0_#7f1d1d] active:shadow-none active:translate-y-1">
+                          }} className="bg-red-800 hover:bg-red-700 disabled:opacity-50 text-white text-xs px-4 py-2 rounded-lg font-bold transition-all flex-1 md:flex-none shadow-[0_4px_0_#7f1d1d] active:shadow-none active:translate-y-1">
                             {t.rejectBtn}
                           </button>
                         </div>
@@ -2476,7 +2555,6 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                 </div>
                 <div className="bg-[#1f1f1f] p-5 rounded-2xl border border-zinc-800 font-sans">
                   
-                  {/* Bulk Delete Section WITH CALENDAR FIX */}
                   <div className="bg-red-900/10 border border-red-900/30 p-4 rounded-xl mb-6 flex flex-col sm:flex-row items-start sm:items-end gap-4">
                     <div className="flex-1">
                       <label className="block text-xs font-bold text-red-400 mb-2">Delete Records (Date Range)</label>
@@ -2512,12 +2590,14 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                            onClick={() => {
                              setConfirmModal({
                                message: `Are you sure you want to delete ${recordsToDelete.length} records? This action cannot be undone.`,
-                               onConfirm: () => {
-                                 // Collection သစ်မှ Document များကို ဖျက်မည်
-                                 const deletePromises = recordsToDelete.map(r => deleteDoc(doc(db, "PointRequests", r.id)));
-                                 Promise.all(deletePromises).then(() => {
-                                    setPointRequests(pointRequests.filter(r => !recordsToDelete.includes(r)));
-                                 });
+                               onConfirm: async () => {
+                                 await Promise.all(recordsToDelete.map(r => deleteDoc(doc(db, "PointRequests", r.id))));
+                                 for (const r of recordsToDelete) {
+                                   if (r.status === 'approved') {
+                                     await updatePointStats(r.provider, -1, -(Number(r.amount) || 0));
+                                   }
+                                 }
+                                 setPointRequests(prev => prev.filter(r => !recordsToDelete.includes(r)));
                                  setBulkDeleteDateFrom('');
                                  setBulkDeleteDateTo('');
                                  showToast(`${recordsToDelete.length} records deleted.`);
@@ -2542,7 +2622,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                       />
                     </div>
                   </div>
-		<div className="overflow-x-auto bg-black/20 rounded-xl border border-zinc-800">
+                  <div className="overflow-x-auto bg-black/20 rounded-xl border border-zinc-800">
                      <table className="w-full text-left text-sm text-zinc-300 min-w-[800px]">
                        <thead className="text-[10px] uppercase bg-black/60 text-zinc-400 border-b border-zinc-800">
                           <tr>
@@ -2554,11 +2634,11 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                              <th className="px-4 py-3 text-right">Action</th>
                           </tr>
                        </thead>
-			<tbody>
+                       <tbody>
                          {paginatedHistory.length === 0 ? (
                            <tr><td colSpan={6} className="text-center py-8 text-zinc-500 text-sm">No records found.</td></tr>
-                         ) : paginatedHistory.map((req, i) => (
-                           <tr key={i} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
+                         ) : paginatedHistory.map((req) => (
+                           <tr key={req.id} className="border-b border-zinc-800/50 hover:bg-white/5 transition">
                              <td className="px-4 py-3 text-xs whitespace-nowrap">{formatDateTime(req.date)}</td>
                              <td className="px-4 py-3 font-bold text-blue-400">{req.username}</td>
                              <td className="px-4 py-3">
@@ -2578,76 +2658,96 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                 {req.status === 'rejected' ? (
                                    <input 
                                      type="number" min="1"
-                                     value={approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.requestedAmount || req.amount || '')}
-                                     onChange={(e) => setApproveAmounts({...approveAmounts, [req.id]: Number(e.target.value)})}
+                                     value={approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.amount || req.requestedAmount || '')}
+                                     onChange={(e) => setApproveAmounts({...approveAmounts, [req.id]: e.target.value === '' ? 0 : Number(e.target.value)})}
                                      className="w-24 bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs text-white text-right rounded focus:outline-none focus:border-[#fcd385]"
                                    />
                                 ) : (
-                                   req.requestedAmount || req.amount
+                                   req.amount ?? req.requestedAmount
                                 )}
                              </td>
                              <td className="px-4 py-3 text-center">
                                {req.status === 'pending' && <span className="text-[10px] bg-yellow-900/50 text-yellow-400 px-2 py-1 rounded font-bold uppercase">{t.statusPending}</span>}
-                               {req.status === 'approved' && <span className="text-[10px] bg-emerald-900/50 text-emerald-400 px-2 py-1 rounded font-bold uppercase">{t.statusSuccess} (+{req.amount})</span>}
+                               {req.status === 'approved' && <span className="text-[10px] bg-emerald-900/50 text-emerald-400 px-2 py-1 rounded font-bold uppercase">{t.statusSuccess} (+{req.amount ?? req.requestedAmount})</span>}
                                {req.status === 'rejected' && <div className="flex flex-col items-center gap-1"><span className="text-[10px] bg-red-900/50 text-red-400 px-2 py-1 rounded font-bold uppercase">{t.statusRejected}</span>{req.remark && <span className="text-[9px] text-red-300 italic max-w-[120px] truncate" title={req.remark}>{req.remark}</span>}</div>}
                              </td>
                              <td className="px-4 py-3 text-right">
                                <div className="flex items-center justify-end gap-2">
                                  {req.status === 'rejected' && (
-                                   <button onClick={async () => {
-                                     const amount = approveAmounts[req.id] !== undefined ? approveAmounts[req.id] : (req.requestedAmount || req.amount || 0);
-                                     const finalIdCode = (editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode).trim() || req.idCode;
-                                     if (amount <= 0) return setAlertModal({ message: "Please enter a valid amount." });
+                                   <button 
+                                     disabled={!!processingReqIds[req.id]}
+                                     onClick={async () => {
+                                       if (processingReqRef.current[req.id]) return;
+                                       const rawAmt = approveAmounts[req.id] !== undefined && approveAmounts[req.id] > 0 ? approveAmounts[req.id] : Number(req.amount || req.requestedAmount || 0);
+                                       const amount = Number(rawAmt);
+                                       const finalIdCode = (editIdCodes[req.id] !== undefined ? editIdCodes[req.id] : req.idCode).trim() || req.idCode;
+                                       if (!amount || amount <= 0) return setAlertModal({ message: "Please enter a valid amount." });
 
-                                     isSyncing.current = true;
-                                     try {
-                                       const userRef = doc(db, "Users", req.username);
-                                       const userSnap = await getDoc(userRef);
-                                       if (!userSnap.exists()) {
-                                         showToast("Error: ဤ User ကို Database တွင် ရှာမတွေ့ပါ။");
+                                       processingReqRef.current[req.id] = true;
+                                       setProcessingReqIds(prev => ({ ...prev, [req.id]: true }));
+                                       isSyncing.current = true;
+
+                                       try {
+                                         const targetUsername = req.username.trim();
+                                         const userRef = doc(db, "Users", targetUsername);
+                                         const reqRef = doc(db, "PointRequests", req.id);
+                                         let updatedUserForUI: UserData | null = null;
+                                         let updatedReqObj: PointRequest | null = null;
+
+                                         await runTransaction(db, async (transaction) => {
+                                           const [userSnap, reqSnap] = await Promise.all([
+                                             transaction.get(userRef),
+                                             transaction.get(reqRef)
+                                           ]);
+                                           if (!userSnap.exists()) {
+                                             throw new Error("USER_NOT_FOUND");
+                                           }
+                                           if (reqSnap.exists() && reqSnap.data().status === 'approved') {
+                                             throw new Error("ALREADY_APPROVED");
+                                           }
+                                           const userData = userSnap.data() as UserData;
+                                           const newBalance = (Number(userData.points) || 0) + amount;
+                                           updatedUserForUI = { ...userData, points: newBalance };
+                                           updatedReqObj = {
+                                             ...req,
+                                             idCode: finalIdCode,
+                                             status: 'approved',
+                                             amount: amount,
+                                             requestedAmount: amount,
+                                             remark: '',
+                                             remainingBalance: newBalance
+                                           };
+                                           transaction.update(userRef, { points: newBalance });
+                                           transaction.set(reqRef, updatedReqObj);
+                                         });
+
+                                         if (updatedUserForUI && updatedReqObj) {
+                                           const finalUser = updatedUserForUI as UserData;
+                                           const finalReq = updatedReqObj as PointRequest;
+                                           setUsers(prevUsers => prevUsers.some(u => u.username === finalUser.username) ? prevUsers.map(u => u.username === finalUser.username ? finalUser : u) : [finalUser, ...prevUsers]);
+                                           if (currentUser?.username === finalUser.username) setCurrentUser(finalUser);
+                                           if (userDetailModal?.username === finalUser.username) setUserDetailModal(finalUser);
+                                           setPointRequests(prev => prev.map(p => p.id === req.id ? finalReq : p));
+                                           await updatePointStats(req.provider, 1, amount);
+                                           showToast(`${amount} ${t.msgApproved}`);
+                                         }
+                                       } catch (error: any) {
+                                         console.error("Error re-approving points: ", error);
+                                         if (error?.message === "USER_NOT_FOUND") {
+                                           setAlertModal({ message: `Error: "${req.username}" ကို Users Database တွင် ရှာမတွေ့ပါ။` });
+                                         } else if (error?.message === "ALREADY_APPROVED") {
+                                           showToast("ဤ Request ကို အတည်ပြုပြီးသား ဖြစ်ပါသည်။");
+                                         } else {
+                                           setAlertModal({ message: "ပြန်လည် Approve လုပ်ရာတွင် အမှားအယွင်းဖြစ်ပေါ်နေပါသည်။" });
+                                         }
+                                       } finally {
+                                         processingReqRef.current[req.id] = false;
+                                         setProcessingReqIds(prev => ({ ...prev, [req.id]: false }));
                                          isSyncing.current = false;
-                                         return;
                                        }
-                                       const userData = userSnap.data() as UserData;
-                                       const updatedUserForUI = { ...userData, points: (userData.points || 0) + amount };
-
-                                       // Firebase ပေါ်တွင် increment ဖြင့် အတိအကျ ပေါင်းထည့်မည်
-                                       await setDoc(userRef, { points: increment(amount) }, { merge: true });
-                                       setUsers(prevUsers => prevUsers.map(u => u.username === req.username ? updatedUserForUI : u));
-
-                                       const updatedReq: PointRequest = {
-                                         ...req,
-                                         idCode: finalIdCode,
-                                         status: 'approved',
-                                         amount: amount,
-                                         remark: '',
-                                         remainingBalance: updatedUserForUI.points
-                                       };
-
-                                       const newNoti: NotificationData = {
-                                         id: Date.now().toString() + '_noti',
-                                         targetUser: req.username,
-                                         message: `ID ${finalIdCode} အတွက် Point ပြန်လည်ထည့်သွင်းပေးလိုက်ပါပြီ။`,
-                                         detail: `+${amount} PTS ဖြည့်သွင်းပြီးပါပြီ။`,
-                                         date: new Date().toISOString(),
-                                         isRead: false,
-                                         actionType: 'point_approve'
-                                       };
-
-                                       await setDoc(doc(db, "PointRequests", req.id), updatedReq);
-                                       await setDoc(doc(db, "Notifications", newNoti.id), newNoti);
-
-                                       setPointRequests(prev => prev.map(p => p.id === req.id ? updatedReq : p));
-                                       setNotifications(prev => [newNoti, ...prev]);
-
-                                       showToast(`${amount} ${t.msgApproved}`);
-                                     } catch (error) {
-                                       console.error("Error re-approving points: ", error);
-                                     } finally {
-                                       isSyncing.current = false;
-                                     }
-                                   }} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow">
-                                     {t.approveBtn}
+                                     }} 
+                                     className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow">
+                                     {processingReqIds[req.id] ? '...' : t.approveBtn}
                                    </button>
                                  )}
                                  <button onClick={() => {
@@ -2655,7 +2755,10 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                      message: t.confirmDelDesc,
                                      onConfirm: () => {
                                        deleteDoc(doc(db, "PointRequests", req.id)).then(() => {
-                                           setPointRequests(pointRequests.filter(p => p.id !== req.id));
+                                           setPointRequests(prev => prev.filter(p => p.id !== req.id));
+                                           if (req.status === 'approved') {
+                                              updatePointStats(req.provider, -1, -(Number(req.amount) || 0));
+                                           }
                                         });
                                         showToast(t.msgDeleted);
                                      }
@@ -2668,7 +2771,6 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                        </tbody>
                      </table>
                   </div>
-                  {/* Pagination UI */}
                   {adminFilteredHistory.length > 0 && renderPagination(historyPage, setHistoryPage, historyPerPage, setHistoryPerPage, adminFilteredHistory.length)}
                 </div>
               </div>
@@ -3020,7 +3122,7 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                 </div>
                 
                 <div className="flex justify-end pt-4">
-                  <button onClick={() => showToast(t.msgUserSaved)} className="bg-[#fcd385] text-[#3e0a0a] px-10 py-3.5 rounded-xl text-sm font-black hover:brightness-110 transition shadow-lg">
+                  <button onClick={handleSaveAllSettings} className="bg-[#fcd385] text-[#3e0a0a] px-10 py-3.5 rounded-xl text-sm font-black hover:brightness-110 transition shadow-lg">
                     SAVE ALL SETTINGS
                   </button>
                 </div>
@@ -3769,12 +3871,12 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                           ? currentUser?.unlockedShows?.includes(selectedShow.id)
                           : currentUser?.unlockedEpisodes?.includes(`${selectedShow.id}_${idx}`);
                           
-                      const showAsAvailable = isReleased && (!isVipOnly || isVipUnlocked);
+                      const showAsAvailable = (isReleased && (!isVipOnly || isVipUnlocked)) || (isVipOnly && !isLongSeries && isVipUnlocked);
 
                       return (
                         <div key={idx} className="flex flex-col gap-1">
                           <button onClick={async () => {
-    if (!currentUser) { setAuthMode('login'); setAuthModalOpen(true); return; }
+                             if (!currentUser) { setAuthMode('login'); setAuthModalOpen(true); return; }
 
                              if (isVipOnly && !isVipUnlocked) {
                                 if (isLongSeries) setVipModalShow(selectedShow);
@@ -3782,23 +3884,25 @@ if(targetSaveUser) await setDoc(doc(db, "Users", targetSaveUser.username), targe
                                 return;
                              }
 
-                             if(isReleased) {
-   if (isVipOnly && !isLongSeries && isVipUnlocked) {
-     // Bot ဆီသို့ DM သွားမည့် လမ်းကြောင်း (Database သစ်အတွက် Username ကိုပါ တွဲပို့မည်)
-     const token = Math.random().toString(36).substring(2, 12);
-await setDoc(doc(db, "Users", currentUser.username), { 
-       tgToken: token, 
-       tgShow: selectedShow.id, 
-       tgEp: idx 
-     }, { merge: true });
-const botUsername = "Jbsehunjae_vip_bot";
-window.location.href = `https://t.me/${botUsername}?start=${token}`;
-   } else if (ep.links && ep.links.length === 1) {
-     window.open(ep.links[0].url, '_blank');
-   } else {
-     setPlatformSelectModal({ep, show: selectedShow});
-   }
-}else {
+                             if (isVipOnly && !isLongSeries && isVipUnlocked) {
+                                const token = Math.random().toString(36).substring(2, 12);
+                                await setDoc(doc(db, "Users", currentUser.username), { 
+                                  tgToken: token, 
+                                  tgShow: selectedShow.id, 
+                                  tgEp: idx 
+                                }, { merge: true });
+                                const botUsername = "Jbsehunjae_vip_bot";
+                                window.location.href = `https://t.me/${botUsername}?start=${token}`;
+                                return;
+                             }
+
+                             if (isReleased) {
+                                if (ep.links && ep.links.length === 1) {
+                                  window.open(ep.links[0].url, '_blank');
+                                } else {
+                                  setPlatformSelectModal({ep, show: selectedShow});
+                                }
+                             } else {
                                 if (isLongSeries && isVipUnlocked) {
                                    if (selectedShow.vipTelegramLink) handleGetTelegramLink(selectedShow.vipTelegramLink);
                                    else showToast("VIP Link not provided yet.");
@@ -4166,13 +4270,13 @@ window.location.href = `https://t.me/${botUsername}?start=${token}`;
                        <div>
                          <p className="text-xs text-zinc-400 mb-1">{req.provider}</p>
                          <p className="text-sm font-bold text-white mb-0.5">ID: <span className="font-mono text-[#fcd385]">{req.idCode}</span></p>
-                         {req.requestedAmount && <p className="text-[11px] text-zinc-300 font-bold mb-1">Amount: {req.requestedAmount}</p>}
+                         {(req.amount || req.requestedAmount) && <p className="text-[11px] text-zinc-300 font-bold mb-1">Amount: {req.status === 'approved' ? (req.amount ?? req.requestedAmount) : (req.requestedAmount ?? req.amount)}</p>}
                          {req.remark && <p className="text-[10px] text-red-300 italic mb-1">Reason: {req.remark}</p>}
                          <p className="text-[10px] text-zinc-600">{formatDateTime(req.date)}</p>
                        </div>
                        <div className="shrink-0 text-right">
                          {req.status === 'pending' && <span className="text-[10px] bg-yellow-900/50 text-yellow-400 px-3 py-1.5 rounded-lg font-bold uppercase border border-yellow-700/50">{t.statusPending}</span>}
-                         {req.status === 'approved' && <div className="flex flex-col items-end gap-1"><span className="text-[10px] bg-emerald-900/50 text-emerald-400 px-3 py-1.5 rounded-lg font-bold uppercase border border-emerald-700/50">{t.statusSuccess}</span><span className="text-xs font-bold text-emerald-400">+{req.amount}</span></div>}
+                         {req.status === 'approved' && <div className="flex flex-col items-end gap-1"><span className="text-[10px] bg-emerald-900/50 text-emerald-400 px-3 py-1.5 rounded-lg font-bold uppercase border border-emerald-700/50">{t.statusSuccess}</span><span className="text-xs font-bold text-emerald-400">+{req.amount ?? req.requestedAmount}</span></div>}
                          {req.status === 'rejected' && <span className="text-[10px] bg-red-900/50 text-red-400 px-3 py-1.5 rounded-lg font-bold uppercase border border-red-700/50">{t.statusRejected}</span>}
                        </div>
                      </div>
@@ -4446,7 +4550,8 @@ setPlatformSelectModal(null);
         </div>
       )}
 
-      {/* NEW VIP PAYMENT MODAL */}
+
+{/* NEW VIP PAYMENT MODAL */}
       {vipModalShow && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md font-sans">
           <div className="bg-gradient-to-b from-[#2b0303] to-[#161616] border border-[#fcd385]/30 rounded-2xl w-full max-w-sm p-6 relative shadow-[0_20px_50px_rgba(0,0,0,0.9)]">
@@ -4473,71 +4578,106 @@ setPlatformSelectModal(null);
             {currentUser ? (
               <div className="flex gap-3">
                 <button onClick={() => setVipModalShow(null)} className="px-6 bg-zinc-700 text-white font-bold py-3 rounded-lg hover:brightness-110 transition-all shadow-[0_4px_0_#3f3f46] active:shadow-none active:translate-y-1">{t.cancelBtn}</button>
-                <button onClick={() => {
-                   const cost = getRequiredPoints(vipModalShow);
-                   if (currentUser.points >= cost) {
-                      
-                      // NEW LOGIC: Record VIP Purchase in History
-                      const newLog: UserHistoryLog = {
-                         id: Date.now().toString(),
-                         type: 'buy_vip',
-                         title: vipModalShow.title_mm || vipModalShow.title_en || 'VIP Unlock',
-                         amount: -cost,
-                         date: new Date().toISOString(),
-                         remainingBalance: currentUser.points - cost
-                      };
+                <button 
+                  disabled={isBuyingVip}
+                  onClick={async () => {
+                    if (isBuyingVipRef.current) return;
+                    const cost = getRequiredPoints(vipModalShow);
+                    isBuyingVipRef.current = true;
+                    setIsBuyingVip(true);
+                    let updatedUserForUI: UserData | null = null;
 
-                      const updatedUserForUI = {
-                         ...currentUser,
-                         points: currentUser.points - cost,
-                         unlockedShows: [...(currentUser.unlockedShows || []), vipModalShow.id],
-                         pointHistory: [newLog, ...(currentUser.pointHistory || [])]
-                      };
+                    try {
+                      const userRef = doc(db, "Users", currentUser.username);
 
-                      // DB တွင် increment သုံး၍ နုတ်မည် (Admin ပေါင်းထည့်သည်များနှင့် မငြိစေရန်)
-                      const dbUpdateData = {
-                         points: increment(-cost),
-                         unlockedShows: [...(currentUser.unlockedShows || []), vipModalShow.id],
-                         pointHistory: [newLog, ...(currentUser.pointHistory || [])]
-                      };
+                      await runTransaction(db, async (transaction) => {
+                        const userSnap = await transaction.get(userRef);
+                        if (!userSnap.exists()) throw new Error("USER_NOT_FOUND");
+                        const freshUser = userSnap.data() as UserData;
+                        const currentPts = Number(freshUser.points) || 0;
 
-                      setUsers(users.map(u => u.username === currentUser.username ? updatedUserForUI : u)); 
-                      setDoc(doc(db, "Users", currentUser.username), dbUpdateData, { merge: true });
-                      setCurrentUser(updatedUserForUI);
-
-// NEW: Save to separate PurchaseLogs Collection (1 Write Only)
-const logId = Date.now().toString();
-setDoc(doc(db, "PurchaseLogs", logId), {
-   id: logId,
-   username: currentUser.username,
-   type: 'buy_vip',
-   title: vipModalShow.title_mm || vipModalShow.title_en || 'VIP Unlock',
-   amount: cost,
-   date: new Date().toISOString()
-});
-                      setVipModalShow(null);
-                      showToast(t.msgVipSuccess);
-
-                      // NEW LOGIC: VIP ဝင်ပြီးတာနဲ့ Telegram Private Channel ဆီ တန်းသွားမည်
-                      if (vipModalShow.vipTelegramLink) {
-    handleGetTelegramLink(vipModalShow.vipTelegramLink);
-} else {
-                         showToast("VIP Link မထည့်ရသေးပါ။ Admin သို့ဆက်သွယ်ပါ။");
-                      }
-                   } else {
-                      setVipModalShow(null); // VIP Box ကို ချက်ချင်းပိတ်မယ်
-                      setAlertModal({ 
-                        message: `${t.msgNotEnough}${cost} PTS`,
-                        actionText: lang === 'en' ? 'Click to Buy Points' : 'Point ဝယ်ရန်နှိပ်ပါ',
-                        onAction: () => {
-                           setAlertModal(null);
-                           setPayStep('providers');
-                           setPointModalOpen(true);
+                        if (freshUser.unlockedShows?.includes(vipModalShow.id)) {
+                          updatedUserForUI = freshUser;
+                          return;
                         }
+                        if (currentPts < cost) {
+                          updatedUserForUI = freshUser;
+                          throw new Error("NOT_ENOUGH_POINTS");
+                        }
+
+                        const newBalance = currentPts - cost;
+                        const newLog: UserHistoryLog = {
+                          id: Date.now().toString(),
+                          type: 'buy_vip',
+                          title: vipModalShow.title_mm || vipModalShow.title_en || 'VIP Unlock',
+                          amount: -cost,
+                          date: new Date().toISOString(),
+                          remainingBalance: newBalance
+                        };
+                        const newUnlockedShows = Array.from(new Set([...(freshUser.unlockedShows || []), vipModalShow.id]));
+                        const newHistory = [newLog, ...(freshUser.pointHistory || [])];
+
+                        updatedUserForUI = {
+                          ...freshUser,
+                          points: newBalance,
+                          unlockedShows: newUnlockedShows,
+                          pointHistory: newHistory
+                        };
+
+                        transaction.update(userRef, {
+                          points: newBalance,
+                          unlockedShows: newUnlockedShows,
+                          pointHistory: newHistory
+                        });
                       });
-                   }
-                }} className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] font-black py-3 rounded-xl shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1 transition-all flex items-center justify-center gap-2">
-                   <Unlock className="w-4 h-4"/> {t.unlockBtn}
+
+                      if (updatedUserForUI) {
+                        const finalUser = updatedUserForUI as UserData;
+                        setCurrentUser(finalUser);
+                        setUsers(prev => prev.map(u => u.username === finalUser.username ? finalUser : u));
+
+                        const logId = Date.now().toString();
+                        await setDoc(doc(db, "PurchaseLogs", logId), {
+                          id: logId,
+                          username: currentUser.username,
+                          type: 'buy_vip',
+                          title: vipModalShow.title_mm || vipModalShow.title_en || 'VIP Unlock',
+                          amount: cost,
+                          date: new Date().toISOString()
+                        });
+
+                        setVipModalShow(null);
+                        showToast(t.msgVipSuccess);
+
+                        if (vipModalShow.vipTelegramLink) {
+                          handleGetTelegramLink(vipModalShow.vipTelegramLink);
+                        } else {
+                          showToast("VIP Link မထည့်ရသေးပါ။ Admin သို့ဆက်သွယ်ပါ။");
+                        }
+                      }
+                    } catch (err: any) {
+                      if (updatedUserForUI) setCurrentUser(updatedUserForUI);
+                      if (err?.message === "NOT_ENOUGH_POINTS") {
+                        setVipModalShow(null);
+                        setAlertModal({ 
+                          message: `${t.msgNotEnough}${cost} PTS`,
+                          actionText: lang === 'en' ? 'Click to Buy Points' : 'Point ဝယ်ရန်နှိပ်ပါ',
+                          onAction: () => {
+                             setAlertModal(null);
+                             setPayStep('providers');
+                             setPointModalOpen(true);
+                          }
+                        });
+                      } else {
+                        setAlertModal({ message: "VIP ဝယ်ယူရာတွင် အမှားအယွင်းဖြစ်ပေါ်နေပါသည်။" });
+                      }
+                    } finally {
+                      isBuyingVipRef.current = false;
+                      setIsBuyingVip(false);
+                    }
+                  }} 
+                  className="flex-1 bg-gradient-to-r from-[#fcd385] to-[#d4af37] disabled:opacity-50 text-[#3e1717] font-black py-3 rounded-xl shadow-[0_4px_0_#a88621] active:shadow-none active:translate-y-1 transition-all flex items-center justify-center gap-2">
+                   <Unlock className="w-4 h-4"/> {isBuyingVip ? 'Processing...' : t.unlockBtn}
                 </button>
               </div>
             ) : (
@@ -4549,7 +4689,7 @@ setDoc(doc(db, "PurchaseLogs", logId), {
         </div>
       )}
 	
-	{/* NEW MINI SERIES PAYMENT MODAL (Pay-Per-Ep) */}
+      {/* NEW MINI SERIES PAYMENT MODAL (Pay-Per-Ep) */}
       {miniVipModalShow && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md font-sans">
           <div className="bg-gradient-to-b from-[#2b0303] to-[#161616] border border-purple-500/30 rounded-2xl w-full max-w-sm p-6 relative shadow-[0_20px_50px_rgba(0,0,0,0.9)]">
@@ -4576,55 +4716,108 @@ setDoc(doc(db, "PurchaseLogs", logId), {
             {currentUser ? (
               <div className="flex gap-3">
                 <button onClick={() => setMiniVipModalShow(null)} className="flex-1 bg-zinc-800 text-white font-bold py-3 rounded-xl transition-all">{t.cancelBtn}</button>
-               <button onClick={async () => {
-   const cost = miniVipModalShow.show.pointsPerEp;
-   if (currentUser.points >= cost) {
-                      const newLog: UserHistoryLog = { id: Date.now().toString(), type: 'buy_ep', title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`, amount: -cost, date: new Date().toISOString(), remainingBalance: currentUser.points - cost };
-                      const updatedUserForUI = {
-                         ...currentUser, points: currentUser.points - cost,
-                         unlockedEpisodes: [...(currentUser.unlockedEpisodes || []), `${miniVipModalShow.show.id}_${miniVipModalShow.epIndex}`],
-                         pointHistory: [newLog, ...(currentUser.pointHistory || [])]
-                      };
-                      
-                      const dbUpdateData = {
-                         points: increment(-cost),
-                         unlockedEpisodes: [...(currentUser.unlockedEpisodes || []), `${miniVipModalShow.show.id}_${miniVipModalShow.epIndex}`],
-                         pointHistory: [newLog, ...(currentUser.pointHistory || [])]
-                      };
+                <button 
+                  disabled={isBuyingVip}
+                  onClick={async () => {
+                    if (isBuyingVipRef.current) return;
+                    const cost = Number(miniVipModalShow.show.pointsPerEp) || 0;
+                    const epKey = `${miniVipModalShow.show.id}_${miniVipModalShow.epIndex}`;
+                    const token = Math.random().toString(36).substring(2, 12);
+                    isBuyingVipRef.current = true;
+                    setIsBuyingVip(true);
+                    let updatedUserForUI: UserData | null = null;
 
-                      setUsers(users.map(u => u.username === currentUser.username ? updatedUserForUI : u));
-                      setDoc(doc(db, "Users", currentUser.username), dbUpdateData, { merge: true });
-                      setCurrentUser(updatedUserForUI);
+                    try {
+                      const userRef = doc(db, "Users", currentUser.username);
 
-// NEW: Save to separate PurchaseLogs Collection (1 Write Only)
-const logId = Date.now().toString();
-setDoc(doc(db, "PurchaseLogs", logId), {
-   id: logId,
-   username: currentUser.username,
-   type: 'buy_ep',
-   title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`,
-   amount: cost,
-   date: new Date().toISOString()
-});
+                      await runTransaction(db, async (transaction) => {
+                        const userSnap = await transaction.get(userRef);
+                        if (!userSnap.exists()) throw new Error("USER_NOT_FOUND");
+                        const freshUser = userSnap.data() as UserData;
+                        const currentPts = Number(freshUser.points) || 0;
 
-setMiniVipModalShow(null);
-showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
-                                          
+                        if (freshUser.unlockedEpisodes?.includes(epKey)) {
+                          updatedUserForUI = freshUser;
+                          transaction.update(userRef, {
+                            tgToken: token,
+                            tgShow: miniVipModalShow.show.id,
+                            tgEp: miniVipModalShow.epIndex
+                          });
+                          return;
+                        }
+                        if (currentPts < cost) {
+                          updatedUserForUI = freshUser;
+                          throw new Error("NOT_ENOUGH_POINTS");
+                        }
 
-                      const token = Math.random().toString(36).substring(2, 12);
-await setDoc(doc(db, "Users", currentUser.username), { 
-    tgToken: token, 
-    tgShow: miniVipModalShow.show.id, 
-    tgEp: miniVipModalShow.epIndex 
-}, { merge: true });
-const botUsername = "Jbsehunjae_vip_bot";
-window.location.href = `https://t.me/${botUsername}?start=${token}`;
-                   } else {
-                      setMiniVipModalShow(null);
-                      setAlertModal({ message: `${t.msgNotEnough}${cost} PTS`, actionText: lang === 'en' ? 'Click to Buy Points' : 'Point ဝယ်ရန်နှိပ်ပါ', onAction: () => { setAlertModal(null); setPayStep('providers'); setPointModalOpen(true); } });
-                   }
-                }} className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2">
-                   <Unlock className="w-4 h-4"/> ဝယ်ယူမည်
+                        const newBalance = currentPts - cost;
+                        const newLog: UserHistoryLog = {
+                          id: Date.now().toString(),
+                          type: 'buy_ep',
+                          title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`,
+                          amount: -cost,
+                          date: new Date().toISOString(),
+                          remainingBalance: newBalance
+                        };
+                        const newUnlockedEps = Array.from(new Set([...(freshUser.unlockedEpisodes || []), epKey]));
+                        const newHistory = [newLog, ...(freshUser.pointHistory || [])];
+
+                        updatedUserForUI = {
+                          ...freshUser,
+                          points: newBalance,
+                          unlockedEpisodes: newUnlockedEps,
+                          pointHistory: newHistory
+                        };
+
+                        transaction.update(userRef, {
+                          points: newBalance,
+                          unlockedEpisodes: newUnlockedEps,
+                          pointHistory: newHistory,
+                          tgToken: token,
+                          tgShow: miniVipModalShow.show.id,
+                          tgEp: miniVipModalShow.epIndex
+                        });
+                      });
+
+                      if (updatedUserForUI) {
+                        const finalUser = updatedUserForUI as UserData;
+                        setCurrentUser(finalUser);
+                        setUsers(prev => prev.map(u => u.username === finalUser.username ? finalUser : u));
+
+                        const logId = Date.now().toString();
+                        await setDoc(doc(db, "PurchaseLogs", logId), {
+                          id: logId,
+                          username: currentUser.username,
+                          type: 'buy_ep',
+                          title: `${miniVipModalShow.show.title_mm || miniVipModalShow.show.title_en} - ${miniVipModalShow.ep.epLabel}`,
+                          amount: cost,
+                          date: new Date().toISOString()
+                        });
+
+                        setMiniVipModalShow(null);
+                        showToast("အပိုင်းကို အောင်မြင်စွာ ဝယ်ယူပြီးပါပြီ။");
+                        const botUsername = "Jbsehunjae_vip_bot";
+                        window.location.href = `https://t.me/${botUsername}?start=${token}`;
+                      }
+                    } catch (err: any) {
+                      if (updatedUserForUI) setCurrentUser(updatedUserForUI);
+                      if (err?.message === "NOT_ENOUGH_POINTS") {
+                        setMiniVipModalShow(null);
+                        setAlertModal({ 
+                          message: `${t.msgNotEnough}${cost} PTS`, 
+                          actionText: lang === 'en' ? 'Click to Buy Points' : 'Point ဝယ်ရန်နှိပ်ပါ', 
+                          onAction: () => { setAlertModal(null); setPayStep('providers'); setPointModalOpen(true); } 
+                        });
+                      } else {
+                        setAlertModal({ message: "အပိုင်းဝယ်ယူရာတွင် အမှားအယွင်းဖြစ်ပေါ်နေပါသည်။" });
+                      }
+                    } finally {
+                      isBuyingVipRef.current = false;
+                      setIsBuyingVip(false);
+                    }
+                  }} 
+                  className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 disabled:opacity-50 text-white font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+                   <Unlock className="w-4 h-4"/> {isBuyingVip ? 'Processing...' : 'ဝယ်ယူမည်'}
                 </button>
               </div>
             ) : null}
