@@ -560,6 +560,42 @@ export default function SweetieWorldApp() {
   const [adminActiveTab, setAdminActiveTab] = useState<'dashboard' | 'users' | 'points' | 'history' | 'logs' | 'settings' | 'promo' | 'faq' | 'upload' | 'uploaded_content'>('dashboard');
   const [dashDateFrom, setDashDateFrom] = useState('');
   const [dashDateTo, setDashDateTo] = useState('');
+  const [dashFilteredReqs, setDashFilteredReqs] = useState<PointRequest[] | null>(null);
+  const [isLoadingDashDate, setIsLoadingDashDate] = useState(false);
+
+  useEffect(() => {
+    if (!dashDateFrom && !dashDateTo) {
+      setDashFilteredReqs(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsLoadingDashDate(true);
+      try {
+        const startStr = dashDateFrom || dashDateTo;
+        const endStr = dashDateTo || dashDateFrom;
+        const [sy, sm, sd] = startStr.split('-').map(Number);
+        const [ey, em, ed] = endStr.split('-').map(Number);
+        const fromD = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+        const toD = new Date(ey, em - 1, ed, 23, 59, 59, 999);
+
+        const q = query(
+          collection(db, "PointRequests"),
+          where("date", ">=", fromD.toISOString()),
+          where("date", "<=", toD.toISOString())
+        );
+        const snap = await getDocs(q);
+        const results = snap.docs
+          .map(d => d.data() as PointRequest)
+          .filter(r => r.status === 'approved');
+        setDashFilteredReqs(results);
+      } catch (err) {
+        console.error("Dashboard date filter error:", err);
+      } finally {
+        setIsLoadingDashDate(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [dashDateFrom, dashDateTo]);
   const [adminUserSearch, setAdminUserSearch] = useState('');
   const [adminPointSearch, setAdminPointSearch] = useState('');
   const [adminHistorySearch, setAdminHistorySearch] = useState('');
@@ -1648,14 +1684,9 @@ export default function SweetieWorldApp() {
    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const paginatedPointsSpentLogs = pointsSpentLogs.slice((pointsSpentPage - 1) * pointsSpentPerPage, pointsSpentPage * pointsSpentPerPage);
 
-  const methodDetailLogs = pointRequests.filter(req => {
+  const activeDashSource = (dashDateFrom || dashDateTo) ? (dashFilteredReqs || []) : pointRequests;
+  const methodDetailLogs = activeDashSource.filter(req => {
       if (req.status !== 'approved' || req.provider !== selectedMethodForDetail) return false;
-      if (dashDateFrom && dashDateTo) {
-         const fromD = new Date(dashDateFrom).setHours(0,0,0,0);
-         const toD = new Date(dashDateTo).setHours(23,59,59,999);
-         const d = new Date(req.date).getTime();
-         return d >= fromD && d <= toD;
-      }
       return true;
   }).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const paginatedMethodDetailLogs = methodDetailLogs.slice((methodDetailPage - 1) * methodDetailPerPage, methodDetailPage * methodDetailPerPage);
@@ -2103,7 +2134,7 @@ export default function SweetieWorldApp() {
               <div className="animate-fade-in space-y-6 font-sans">
                 <h3 className="text-xl font-bold text-white border-l-4 border-[#fcd385] pl-3">{t.adminTabDashboard}</h3>
                 
-                {/* Date Filters (From & To) */}
+               {/* Date Filters (From & To) */}
                 <div className="bg-[#1f1f1f] p-4 rounded-2xl border border-zinc-800 flex flex-wrap items-center gap-4">
                    <div className="flex items-center gap-2">
                      <label className="text-xs font-bold text-zinc-400">From Date:</label>
@@ -2113,7 +2144,8 @@ export default function SweetieWorldApp() {
                      <label className="text-xs font-bold text-zinc-400">To Date:</label>
                      <input type="date" value={dashDateTo} onChange={e => setDashDateTo(e.target.value)} className="bg-black border border-zinc-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-[#fcd385]" />
                    </div>
-                   <button onClick={() => {setDashDateFrom(''); setDashDateTo('');}} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg font-bold transition shadow-lg">Clear Filter</button>
+                   <button onClick={() => {setDashDateFrom(''); setDashDateTo(''); setDashFilteredReqs(null);}} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg font-bold transition shadow-lg">Clear Filter</button>
+                   {isLoadingDashDate && <span className="text-xs text-[#fcd385] font-bold flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5 animate-spin"/> Loading date records...</span>}
                 </div>
 
                 {(() => {
@@ -2134,22 +2166,17 @@ export default function SweetieWorldApp() {
                    }, 0);
 
                    // 1. Get ONLY Approved Point Requests and apply Date Filter
-                   let filteredReqs = pointRequests.filter(req => req.status === 'approved');
-                   if (dashDateFrom && dashDateTo) {
-                     const fromD = new Date(dashDateFrom).setHours(0,0,0,0);
-                     const toD = new Date(dashDateTo).setHours(23,59,59,999);
-                     filteredReqs = filteredReqs.filter(req => {
-                       const d = new Date(req.date).getTime();
-                       return d >= fromD && d <= toD;
-                     });
-                   }
+                   const isDateFiltered = Boolean(dashDateFrom || dashDateTo);
+                   const filteredReqs = isDateFiltered
+                     ? (dashFilteredReqs || [])
+                     : pointRequests.filter(req => req.status === 'approved');
 
                    // 2. Group by Payment Provider 
                    const providerStats: Record<string, {count: number, amount: number}> = {};
                    let grandTotalCount = 0;
                    let grandTotalAmount = 0;
 
-                   if (!(dashDateFrom && dashDateTo) && Object.keys(approvedMethodStats).length > 0) {
+                   if (!isDateFiltered && Object.keys(approvedMethodStats).length > 0) {
                       Object.entries(approvedMethodStats).forEach(([prov, st]) => {
                          providerStats[prov] = { count: st.count, amount: st.amount };
                          grandTotalCount += st.count;
@@ -2158,7 +2185,7 @@ export default function SweetieWorldApp() {
                    } else {
                       filteredReqs.forEach(req => {
                          const prov = req.provider || 'Unknown';
-                         const amt = req.amount || 0; // Only uses the actually approved amount
+                         const amt = Number(req.amount ?? req.requestedAmount) || 0;
                          if (!providerStats[prov]) providerStats[prov] = { count: 0, amount: 0 };
                          providerStats[prov].count += 1;
                          providerStats[prov].amount += amt;
