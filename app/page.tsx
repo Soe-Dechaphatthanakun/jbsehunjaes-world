@@ -1161,7 +1161,8 @@ export default function SweetieWorldApp() {
     showToast("Movies Backup Downloaded Successfully!");
   };
 
-	const handleAuthSubmit = async (e: React.FormEvent) => {
+
+ const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
 
@@ -1175,7 +1176,7 @@ export default function SweetieWorldApp() {
             return setAuthError("စကားဝှက် (Password) အနည်းဆုံး ဂဏန်း/စာသား (၆) လုံး ရှိရပါမည်။");
         }
         
-        // ၁။ Username ကို Database (Users Collection) တွင် ရှိ/မရှိ အရင်စစ်မည် (စာလုံးအကြီး/အသေးပါ ထပ်မနေစေရန် စစ်ဆေးမည်)
+        // ၁။ Username ကို Database (Users Collection) တွင် ရှိ/မရှိ အရင်စစ်မည်
         const [usernameSnap, lowerUsernameSnap] = await Promise.all([
             getDoc(doc(db, "Users", inputUsername)),
             inputUsername !== inputUsername.toLowerCase() 
@@ -1199,7 +1200,7 @@ export default function SweetieWorldApp() {
            await createUserWithEmailAndPassword(auth, inputEmail, authForm.password);
            
            const newUser: UserData = { 
-             username: inputUsername, email: inputEmail, role: 'user', points: 0, vip: false, unlockedShows: [],
+             username: inputUsername, email: inputEmail, password: authForm.password, role: 'user', points: 0, vip: false, unlockedShows: [],
              createdAt: new Date().toISOString(), lastLoginAt: new Date().toISOString(), pointHistory: []
            }; 
 
@@ -1223,8 +1224,7 @@ export default function SweetieWorldApp() {
            }
         }
 
-
-	} else if (authMode === 'login') {
+      } else if (authMode === 'login') {
         const rawInput = authForm.username.trim();
         const lowerInput = rawInput.toLowerCase();
         let userEmailForAuth = lowerInput;
@@ -1238,23 +1238,30 @@ export default function SweetieWorldApp() {
            } else {
                return setAuthError(t.msgWrong);
            }
+        } else {
+           const emailVariants = Array.from(new Set([lowerInput, rawInput]));
+           const emailQuery = query(collection(db, "Users"), where("email", "in", emailVariants), limit(1));
+           const emailSnap = await getDocs(emailQuery);
+           if (!emailSnap.empty) {
+               preFetchedUser = emailSnap.docs[0].data() as UserData;
+               userEmailForAuth = preFetchedUser.email;
+           } else {
+               return setAuthError(t.msgWrong);
+           }
+        }
+
+        // Admin မှ Password အသစ်ပြောင်းပေးထားပါက Password အဟောင်းဖြင့် ဝင်၍မရအောင် စစ်ဆေးမည်
+        if ((preFetchedUser as any)?.mustUseFirestorePwd && preFetchedUser?.password !== authForm.password) {
+           return setAuthError(t.msgWrong);
         }
 
         try {
            await signInWithEmailAndPassword(auth, userEmailForAuth, authForm.password);
            
-           let userDoc: UserData | null = preFetchedUser;
-           if (!userDoc && lowerInput.includes('@')) {
-               const emailVariants = Array.from(new Set([lowerInput, rawInput]));
-               const emailQuery = query(collection(db, "Users"), where("email", "in", emailVariants), limit(1));
-               const emailSnap = await getDocs(emailQuery);
-               if (!emailSnap.empty) userDoc = emailSnap.docs[0].data() as UserData;
-           }
-
-           if (userDoc) {
+           if (preFetchedUser) {
                const nowIso = new Date().toISOString();
-               const updatedUser = { ...userDoc, points: Number(userDoc.points) || 0, lastLoginAt: nowIso };
-               await setDoc(doc(db, "Users", updatedUser.username), { lastLoginAt: nowIso }, { merge: true });
+               const updatedUser: UserData = { ...preFetchedUser, password: authForm.password, points: Number(preFetchedUser.points) || 0, lastLoginAt: nowIso };
+               await setDoc(doc(db, "Users", updatedUser.username), { lastLoginAt: nowIso, password: authForm.password, mustUseFirestorePwd: false }, { merge: true });
                setCurrentUser(updatedUser);
                setUsers(prev => prev.some(u => u.username === updatedUser.username) ? prev.map(u => u.username === updatedUser.username ? updatedUser : u) : [updatedUser, ...prev]);
                if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
@@ -1266,25 +1273,23 @@ export default function SweetieWorldApp() {
                setAuthError(t.msgWrong);
            }
         } catch (error: any) {
-            const legacyUser = preFetchedUser || (await (async () => {
-                const snap = await getDoc(doc(db, "Users", rawInput));
-                return snap.exists() ? (snap.data() as UserData) : null;
-            })());
-
-            if (legacyUser && legacyUser.password === authForm.password) {
+            if (preFetchedUser && preFetchedUser.password && preFetchedUser.password === authForm.password) {
                 try {
-                    await createUserWithEmailAndPassword(auth, legacyUser.email, authForm.password);
-                    const { password, ...restData } = legacyUser;
+                    await createUserWithEmailAndPassword(auth, preFetchedUser.email, authForm.password).catch(() => {});
+                    const nowIso = new Date().toISOString();
                     const updatedUser: UserData = { 
-                        ...restData, 
-                        points: Number(restData.points) || 0,
-                        lastLoginAt: new Date().toISOString() 
+                        ...preFetchedUser, 
+                        points: Number(preFetchedUser.points) || 0,
+                        lastLoginAt: nowIso 
                     };
-                    await setDoc(doc(db, "Users", updatedUser.username), updatedUser);
+                    await setDoc(doc(db, "Users", updatedUser.username), { lastLoginAt: nowIso, password: authForm.password }, { merge: true });
                     setCurrentUser(updatedUser);
+                    setUsers(prev => prev.some(u => u.username === updatedUser.username) ? prev.map(u => u.username === updatedUser.username ? updatedUser : u) : [updatedUser, ...prev]);
                     if (rememberMe) localStorage.setItem('jbsehunjaes_auth', updatedUser.username);
                     showToast(t.msgLoginSucc);
                     setAuthModalOpen(false);
+                    setAuthForm({ username: '', email: '', password: '' });
+                    setShowWelcomePromo(true);
                 } catch (e) {
                     setAuthError("အကောင့်လုံခြုံရေး အဆင့်မြှင့်တင်ရာတွင် အမှားအယွင်းရှိနေပါသည်။");
                 }
@@ -1315,22 +1320,38 @@ export default function SweetieWorldApp() {
     if (pwdForm.new !== pwdForm.confirm) return setAlertModal({ message: t.pwdMismatch });
     if (pwdForm.new.length < 6) return setAlertModal({ message: "စကားဝှက် (Password) အနည်းဆုံး ၆ လုံး ရှိရပါမည်။" });
 
+    if (currentUser.password && pwdForm.old !== currentUser.password) {
+        return setAlertModal({ message: t.wrongOldPwd });
+    }
+
     const user = auth.currentUser;
+    let firebaseUpdated = false;
     if (user && user.email) {
         try {
             const credential = EmailAuthProvider.credential(user.email, pwdForm.old);
             await reauthenticateWithCredential(user, credential);
             await updatePassword(user, pwdForm.new);
-            showToast("Password updated successfully!");
-            setChangePwdModalOpen(false);
-            setPwdForm({ old: '', new: '', confirm: '' });
-            setShowPwdOld(false); setShowPwdNew(false); setShowPwdConfirm(false);
+            firebaseUpdated = true;
         } catch (error: any) {
-            console.error(error);
-            setAlertModal({ message: t.wrongOldPwd }); 
+            if (!currentUser.password) {
+                return setAlertModal({ message: t.wrongOldPwd });
+            }
         }
-    } else {
-        setAlertModal({ message: "လုပ်ဆောင်မှု မအောင်မြင်ပါ။ Login ပြန်ဝင်ပြီးမှ ထပ်ကြိုးစားကြည့်ပါ။" });
+    } else if (!currentUser.password) {
+        return setAlertModal({ message: "လုပ်ဆောင်မှု မအောင်မြင်ပါ။ Login ပြန်ဝင်ပြီးမှ ထပ်ကြိုးစားကြည့်ပါ။" });
+    }
+
+    try {
+        await setDoc(doc(db, "Users", currentUser.username), { password: pwdForm.new, mustUseFirestorePwd: !firebaseUpdated }, { merge: true });
+        const updated = { ...currentUser, password: pwdForm.new };
+        setCurrentUser(updated);
+        setUsers(prev => prev.map(u => u.username === currentUser.username ? updated : u));
+        showToast("Password updated successfully!");
+        setChangePwdModalOpen(false);
+        setPwdForm({ old: '', new: '', confirm: '' });
+        setShowPwdOld(false); setShowPwdNew(false); setShowPwdConfirm(false);
+    } catch (err) {
+        setAlertModal({ message: "Password ပြောင်းလဲရာတွင် အမှားအယွင်းရှိနေပါသည်။" });
     }
   };
 
@@ -1385,6 +1406,7 @@ export default function SweetieWorldApp() {
     }
   };
 
+
   const handleAdminSaveUser = async () => {
     if (!editUserRemark.trim() && editUserModal.mode === 'edit') return setAlertModal({ message: "လုပ်ဆောင်ရသည့် အကြောင်းရင်း (Remark) ကို ထည့်ပေးပါ။" });
     
@@ -1428,6 +1450,7 @@ export default function SweetieWorldApp() {
         const finalPoints = (Number(editUserForm.points) || 0) + adjustment;
         const newUser: UserData = {
            ...cleanEditUserForm, 
+           password: rawPwd,
            points: finalPoints,
            username: targetUsername,
            email: targetEmail,
@@ -1435,19 +1458,30 @@ export default function SweetieWorldApp() {
            lastLoginAt: new Date().toISOString(),
            pointHistory: []
         };
-        delete newUser.password;
 
         await setDoc(doc(db, "Users", newUser.username), newUser);
         setUsers(prev => [newUser, ...prev]);
       } else {
         const targetUsername = editUserModal.oldUsername || editUserForm.username.trim();
+        const rawNewPwd = (editUserForm.password || '').trim();
+
+        if (rawNewPwd && rawNewPwd.length < 6) {
+          isSyncing.current = false;
+          return setAlertModal({ message: "စကားဝှက် (Password) အနည်းဆုံး (၆) လုံး ရှိရပါမည်။" });
+        }
+
         const userRef = doc(db, "Users", targetUsername);
         let savedUserObj: UserData | null = null;
+        let oldDbPassword = '';
+        let isPwdChanged = false;
 
         await runTransaction(db, async (transaction) => {
           const userSnap = await transaction.get(userRef);
           if (!userSnap.exists()) throw new Error("User not found in database");
           const dbUser = userSnap.data() as UserData;
+          oldDbPassword = dbUser.password || '';
+          isPwdChanged = Boolean(rawNewPwd && rawNewPwd !== oldDbPassword);
+
           const currentDbPoints = Number(dbUser.points) || 0;
           const finalPoints = currentDbPoints + adjustment;
           let newPointHistory = dbUser.pointHistory || [];
@@ -1468,11 +1502,22 @@ export default function SweetieWorldApp() {
             ...dbUser,
             role: editUserForm.role,
             email: editUserForm.email.trim(),
+            password: rawNewPwd ? rawNewPwd : dbUser.password,
             points: finalPoints,
-            pointHistory: newPointHistory
-          };
+            pointHistory: newPointHistory,
+            ...(isPwdChanged ? { mustUseFirestorePwd: true } : {})
+          } as UserData;
           transaction.set(userRef, savedUserObj);
         });
+
+        // အကယ်၍ Password အဟောင်းရှိခဲ့ပါက Firebase Auth ထဲတွင်ပါ တစ်ပါတည်း ပြောင်းပေးမည်
+        if (isPwdChanged && oldDbPassword) {
+          try {
+            const cred = await signInWithEmailAndPassword(secondaryAuth, editUserForm.email.trim(), oldDbPassword);
+            await updatePassword(cred.user, rawNewPwd);
+            await secondaryAuth.signOut();
+          } catch (e) {}
+        }
 
         if (savedUserObj) {
           const finalUser = savedUserObj as UserData;
@@ -1482,7 +1527,7 @@ export default function SweetieWorldApp() {
         }
 
         if (editUserRemark.trim() && currentUser) {
-           const newLog: AdminLogData = { id: Date.now().toString()+'_log', adminName: currentUser.username, targetUser: targetUsername, action: 'Edit User Profile', remark: editUserRemark.trim(), date: new Date().toISOString() };
+           const newLog: AdminLogData = { id: Date.now().toString()+'_log', adminName: currentUser.username, targetUser: targetUsername, action: isPwdChanged ? 'Edit User / Change Password' : 'Edit User Profile', remark: editUserRemark.trim(), date: new Date().toISOString() };
            setAdminLogs(prev => [newLog, ...prev]);
            await setDoc(doc(db, "AdminLogs", newLog.id), newLog);
         }
@@ -2381,20 +2426,34 @@ export default function SweetieWorldApp() {
                              <td className="px-4 py-3 text-right">
                                <div className="flex justify-end gap-2">
                                  
-                                 {/* NEW: Reset Password ခလုတ် */}
+                                 {/* NEW: Direct Change Password ခလုတ် */}
                                  <button onClick={() => {
-                                   setConfirmModal({
-                                      message: `${u.username} ၏ Email သို့ Password အသစ်ပြောင်းရန် Link ပို့ပေးမည်မှာ သေချာပါသလား?`,
-                                      onConfirm: async () => { 
+                                   setPromptModal({
+                                      title: `${u.username} ၏ Password အသစ်ပြောင်းရန်`,
+                                      placeholder: "Password အသစ် ရိုက်ထည့်ပါ (အနည်းဆုံး ၆ လုံး)...",
+                                      onSubmit: async (newPassword) => {
+                                         const cleanPwd = newPassword.trim();
+                                         if (cleanPwd.length < 6) {
+                                            return setAlertModal({ message: "စကားဝှက် (Password) အနည်းဆုံး (၆) လုံး ရှိရပါမည်။" });
+                                         }
                                          try {
-                                            await sendPasswordResetEmail(auth, u.email);
-                                            showToast(`Reset Email ကို ${u.username} ထံ အောင်မြင်စွာ ပို့ပေးလိုက်ပါပြီ။ (Spam တွင်ရှာရန်ပြောပါ)`);
+                                            if (u.password) {
+                                               try {
+                                                  const cred = await signInWithEmailAndPassword(secondaryAuth, u.email, u.password);
+                                                  await updatePassword(cred.user, cleanPwd);
+                                                  await secondaryAuth.signOut();
+                                               } catch (e) {}
+                                            }
+                                            await setDoc(doc(db, "Users", u.username), { password: cleanPwd, mustUseFirestorePwd: true }, { merge: true });
+                                            setUsers(prev => prev.map(user => user.username === u.username ? { ...user, password: cleanPwd } : user));
+                                            if (userDetailModal?.username === u.username) setUserDetailModal({ ...userDetailModal, password: cleanPwd });
+                                            showToast(`${u.username} ၏ Password ကို အောင်မြင်စွာ ပြောင်းလဲပေးလိုက်ပါပြီ။`);
                                          } catch (error) {
-                                            showToast("Email ပို့ရာတွင် အမှားအယွင်းရှိနေပါသည်။");
+                                            showToast("Password ပြောင်းပေးရာတွင် အမှားအယွင်းရှိနေပါသည်။");
                                          }
                                       }
                                    });
-                                 }} className="p-2 bg-zinc-800 rounded text-yellow-400 hover:bg-zinc-700 transition" title="Send Reset Password Email"><Key className="w-4 h-4"/></button>
+                                 }} className="p-2 bg-zinc-800 rounded text-yellow-400 hover:bg-zinc-700 transition" title="Change User Password"><Key className="w-4 h-4"/></button>
                                  
                                  <button onClick={() => setUserDetailModal(u)} className="p-2 bg-zinc-800 rounded text-emerald-400 hover:bg-zinc-700 transition" title="View Details"><Eye className="w-4 h-4"/></button>
                                  <button onClick={() => {setEditUserForm({...u}); setEditUserRemark(''); setEditUserModal({isOpen: true, mode: 'edit', oldUsername: u.username});}} className="p-2 bg-zinc-800 rounded text-blue-400 hover:bg-zinc-700 transition" title="Edit User"><Edit className="w-4 h-4"/></button>
