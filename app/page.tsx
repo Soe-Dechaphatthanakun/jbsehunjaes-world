@@ -49,7 +49,7 @@ interface PointRequest { id: string; username: string; idCode: string; provider:
 interface ContentItem { id: string; title_en: string; body_en: string; title_mm: string; body_mm: string; }
 interface PromoItem { id: string; title_en: string; body_en: string; title_mm: string; body_mm: string; image?: string; }
 interface SocialLink { id: string; platform: string; url: string; logo?: string; }
-interface SiteConfig { marqueeEn: string; marqueeMm: string; depositGuideEn: string; depositGuideMm: string; paymentWarningEn: string; paymentWarningMm: string; socialLinks: SocialLink[]; }
+interface SiteConfig { marqueeEn: string; marqueeMm: string; depositGuideEn: string; depositGuideMm: string; paymentWarningEn: string; paymentWarningMm: string; socialLinks: SocialLink[]; categoryImages?: Record<string, string>; }
 interface NotificationData { id: string; targetUser: string; message: string; detail?: string; date: string; isRead: boolean; actionType: 'point_request' | 'point_approve' | 'point_reject' | 'admin_edit' | 'new_user' | 'new_upload' | 'ep_update'; readBy?: string[]; }
 interface AdminLogData { id: string; adminName: string; targetUser: string; action: string; remark: string; date: string; }
 
@@ -106,7 +106,7 @@ const INITIAL_USERS: UserData[] = [
 const TRANSLATIONS = {
   en: {
     loginBtn: "LOGIN", signUpBtn: "REGISTER", adminPanel: "Admin Panel", logout: "Logout", pts: "PTS",
-    latestReleases: "Latest Releases", collection: "Collection", episodes: "Episodes", searchPlaceholder: "Search drama, movie...",
+    latestReleases: "Categories", collection: "Collection", episodes: "Episodes", searchPlaceholder: "Search drama, movie...",
     home: "Home", promotions: "Promotions", faq: "FAQ & Guide", email: "Email or Username", password: "Password", 
     forgotPwd: "Forgot password?", noAccount: "Don't have an account?", hasAccount: "Already have an account?", backTo: "Back to", 
     getpwd: "Get Password", buyPoints: "Buy Points", watchBtn: "Click to Watch", waitBtn: "Wait for Schedule",
@@ -146,7 +146,7 @@ const TRANSLATIONS = {
   },
   mm: {
     loginBtn: "အကောင့်ဝင်ရန်", signUpBtn: "အကောင့်ဖွင့်ရန်", adminPanel: "Admin စာမျက်နှာ", logout: "အကောင့်မှထွက်ရန်", pts: "မှတ်",
-    latestReleases: "နောက်ဆုံးတင်ထားသော ဇာတ်ကားများ", collection: "ဇာတ်ကားများ", episodes: "အပိုင်းများ", searchPlaceholder: "ဇာတ်ကားအမည် ရှာရန်...",
+    latestReleases: "ဇာတ်ကားအမျိုးအစားများ", collection: "ဇာတ်ကားများ", episodes: "အပိုင်းများ", searchPlaceholder: "ဇာတ်ကားအမည် ရှာရန်...",
     home: "ပင်မစာမျက်နှာ", promotions: "ပရိုမိုးရှင်းများ", faq: "Point ဝယ်နည်း နှင့် အမေးအဖြေ", email: "အီးမေးလ် (သို့) Username", password: "စကားဝှက်", 
     forgotPwd: "စကားဝှက်မေ့နေပါသလား?", noAccount: "အကောင့်မရှိသေးဘူးလား?", hasAccount: "အကောင့်ရှိပြီးသားလား?", backTo: "နောက်သို့", 
     getpwd: "စကားဝှက်တောင်းမည်", buyPoints: "Point ဝယ်ယူရန်", watchBtn: "ဇာတ်ကားကြည့်ရန်နှိပ်ပါ", waitBtn: "အချိန်စောင့်ပါ",
@@ -228,7 +228,7 @@ export default function SweetieWorldApp() {
   // DATA STATES
   const [users, setUsers] = useState<UserData[]>(INITIAL_USERS);
   const [totalUsersCount, setTotalUsersCount] = useState(0); // 🌟 Dashboard တွင် User အားလုံးအရေအတွက် ပြနိုင်ရန်
-  const [shows, setShows] = useState<VideoCardData[]>(INITIAL_SHOWS);
+  const [shows, setShows] = useState<VideoCardData[]>([]);
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [platforms, setPlatforms] = useState<string[]>(INITIAL_PLATFORMS);
   const [promotions, setPromotions] = useState<PromoItem[]>([]);
@@ -833,7 +833,6 @@ export default function SweetieWorldApp() {
                setUsers([]); return []; 
             })(),
             fetchConfig(),
-            fetchShows(),
             fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
             fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
             fetchDoc("promotions", setPromotions, [{ id: '1', title_en: 'Welcome Bonus', body_en: 'New members get free VIP trial for 3 days!', title_mm: 'အကောင့်သစ် Bonus', body_mm: "Jbsehunjae's World မှာ ကြိုဆိုပါတယ်!" }]),
@@ -861,6 +860,7 @@ export default function SweetieWorldApp() {
             setNotifications(loadedNotis);
             if (!uSnap.empty) setUsers(uSnap.docs.map(d => d.data() as UserData));
             setTotalUsersCount(countSnap.data().count);
+           await fetchShows();
             await fetchOrInitPointStats();
             lastSyncTime.current = Date.now();
         }
@@ -948,18 +948,19 @@ export default function SweetieWorldApp() {
 
   // NEW: Search စာသားကိုပါ လက်ခံနိုင်အောင် ပြင်ဆင်ထားသည်
   const fetchMovies = async (isLoadMore = false, cat = activeCategory, searchTxt = searchQuery) => {
+    const safeSearch = searchTxt.toLowerCase().replace(/\s+/g, '');
+    if (safeSearch.length === 0 && cat === 'Latest Releases') return;
     if (isLoadMore && (!lastVisible || !hasMore)) return;
     setLoadingMore(true);
     try {
         let baseQuery;
-        const safeSearch = searchTxt.toLowerCase().replace(/\s+/g, '');
 
         if (safeSearch.length > 0) {
             // Search Box တွင် စာရိုက်ထားလျှင် (Database ထဲမှ array-contains ဖြင့် တိုက်ရိုက်ရှာမည်)
             baseQuery = query(collection(db, "Shows"), where("searchKeywords", "array-contains", safeSearch), orderBy("updatedAt", "desc"));
         } else {
             // Search မလုပ်ထားလျှင် ရိုးရိုး Category အတိုင်းပြမည်
-            if (cat === 'Latest Releases') {
+            if (cat === 'All') {
                 baseQuery = query(collection(db, "Shows"), orderBy("updatedAt", "desc"));
             } else {
                 baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("updatedAt", "desc"));
@@ -1011,6 +1012,8 @@ export default function SweetieWorldApp() {
   useEffect(() => {
      if (isInitialLoad) return;
      setUiPage(1);
+     if (activeCategory === 'Latest Releases') return;
+     setShows([]);
      fetchMovies(false, activeCategory, '');
   }, [activeCategory]);
 
@@ -1019,6 +1022,7 @@ export default function SweetieWorldApp() {
      if (isInitialLoad) return;
      const timeoutId = setTimeout(() => {
          setUiPage(1);
+         if (!searchQuery.trim() && activeCategory === 'Latest Releases') return;
          fetchMovies(false, activeCategory, searchQuery);
      }, 800); 
      return () => clearTimeout(timeoutId);
@@ -2198,7 +2202,7 @@ export default function SweetieWorldApp() {
                 <button onClick={() => setAdminActiveTab('upload')} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'upload' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
                   <Upload className="w-5 h-5"/> {t.adminTabUpload}
                 </button>
-                <button onClick={() => {syncLatestData(); setAdminActiveTab('uploaded_content');}} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'uploaded_content' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                <button onClick={() => {syncLatestData(); setAdminActiveTab('uploaded_content'); if (shows.length === 0) fetchMovies(false, 'All', '');}} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'uploaded_content' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
                   <ListVideo className="w-5 h-5"/> {lang === 'en' ? 'Uploaded Content' : 'တင်ထားသော ဇာတ်ကားများ'}
                 </button>
              </nav>
@@ -3179,38 +3183,60 @@ export default function SweetieWorldApp() {
                          <input type="text" value={newCategory || ''} onChange={(e) => setNewCategory(e.target.value)} placeholder={t.newCatName} className="bg-black border border-zinc-700 p-2.5 rounded-lg flex-1 text-sm text-white focus:outline-none focus:border-[#fcd385]" />
                          <button onClick={() => {if(newCategory && !categories.includes(newCategory)){ setCategories([...categories, newCategory]); setNewCategory(''); showToast('Category Added');}}} className="bg-[#fcd385] px-5 rounded-lg text-black text-sm font-bold">{t.addBtn}</button>
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2.5">
                         {categories.map((c, idx) => (
-                          <div key={c} className="flex justify-between items-center bg-black p-3 rounded-lg border border-zinc-800">
-                             <span className="text-sm text-white font-bold">{c}</span>
-                             {c !== 'All' && (
-                               <div className="flex items-center gap-1.5">
-                                 {/* အပေါ်ရွှေ့ရန် ခလုတ် (▲) */}
-                                 {idx > 1 && (
-                                   <button onClick={() => {
-                                     const newCats = [...categories];
-                                     const temp = newCats[idx - 1];
-                                     newCats[idx - 1] = newCats[idx];
-                                     newCats[idx] = temp;
-                                     setCategories(newCats);
-                                   }} className="p-1.5 bg-blue-900/30 rounded text-blue-400 hover:bg-blue-900 transition text-xs font-black shadow-inner" title="Move Up">▲</button>
+                          <div key={c} className="flex flex-col gap-2 bg-black p-3 rounded-lg border border-zinc-800">
+                             <div className="flex justify-between items-center">
+                               <div className="flex items-center gap-2.5">
+                                 {c !== 'All' && siteConfig.categoryImages?.[c] && (
+                                   <img src={siteConfig.categoryImages[c]} alt={c} className="w-8 h-10 object-cover rounded border border-zinc-700 shrink-0" />
                                  )}
-                                 {/* အောက်ရွှေ့ရန် ခလုတ် (▼) */}
-                                 {idx < categories.length - 1 && (
-                                   <button onClick={() => {
-                                     const newCats = [...categories];
-                                     const temp = newCats[idx + 1];
-                                     newCats[idx + 1] = newCats[idx];
-                                     newCats[idx] = temp;
-                                     setCategories(newCats);
-                                   }} className="p-1.5 bg-blue-900/30 rounded text-blue-400 hover:bg-blue-900 transition text-xs font-black shadow-inner" title="Move Down">▼</button>
-                                 )}
-                                 {/* ဖျက်ရန် ခလုတ် */}
-                                 <button onClick={() => setConfirmModal({
-                                    message: t.confirmDelDesc,
-                                    onConfirm: () => setCategories(categories.filter(cat => cat !== c))
-                                 })} className="p-1.5 bg-red-900/30 rounded text-red-400 hover:bg-red-900 transition ml-2"><Trash2 className="w-4 h-4"/></button>
+                                 <span className="text-sm text-white font-bold">{c}</span>
                                </div>
+                               {c !== 'All' && (
+                                 <div className="flex items-center gap-1.5">
+                                   {/* အပေါ်ရွှေ့ရန် ခလုတ် (▲) */}
+                                   {idx > 1 && (
+                                     <button onClick={() => {
+                                       const newCats = [...categories];
+                                       const temp = newCats[idx - 1];
+                                       newCats[idx - 1] = newCats[idx];
+                                       newCats[idx] = temp;
+                                       setCategories(newCats);
+                                     }} className="p-1.5 bg-blue-900/30 rounded text-blue-400 hover:bg-blue-900 transition text-xs font-black shadow-inner" title="Move Up">▲</button>
+                                   )}
+                                   {/* အောက်ရွှေ့ရန် ခလုတ် (▼) */}
+                                   {idx < categories.length - 1 && (
+                                     <button onClick={() => {
+                                       const newCats = [...categories];
+                                       const temp = newCats[idx + 1];
+                                       newCats[idx + 1] = newCats[idx];
+                                       newCats[idx] = temp;
+                                       setCategories(newCats);
+                                     }} className="p-1.5 bg-blue-900/30 rounded text-blue-400 hover:bg-blue-900 transition text-xs font-black shadow-inner" title="Move Down">▼</button>
+                                   )}
+                                   {/* ဖျက်ရန် ခလုတ် */}
+                                   <button onClick={() => setConfirmModal({
+                                      message: t.confirmDelDesc,
+                                      onConfirm: () => setCategories(categories.filter(cat => cat !== c))
+                                   })} className="p-1.5 bg-red-900/30 rounded text-red-400 hover:bg-red-900 transition ml-2"><Trash2 className="w-4 h-4"/></button>
+                                 </div>
+                               )}
+                             </div>
+                             {c !== 'All' && (
+                               <input
+                                 type="text"
+                                 placeholder="Category Cover Image URL..."
+                                 value={siteConfig.categoryImages?.[c] || ''}
+                                 onChange={e => setSiteConfig({
+                                   ...siteConfig,
+                                   categoryImages: {
+                                     ...(siteConfig.categoryImages || {}),
+                                     [c]: e.target.value
+                                   }
+                                 })}
+                                 className="w-full bg-zinc-900 border border-zinc-700 p-2 rounded-lg text-xs text-zinc-300 focus:outline-none focus:border-[#fcd385]"
+                               />
                              )}
                           </div>
                         ))}
@@ -3838,79 +3864,144 @@ export default function SweetieWorldApp() {
           </div>
 
 	<main className="w-full px-4 mt-6 pb-12 font-sans">
-            {/* Movies Grid (15 Items / Paginated 16:9) */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-5">
-              {(() => {
-                const paginatedGridShows = filteredShows.slice((uiPage - 1) * itemsPerPage, uiPage * itemsPerPage);
-                
-                if (paginatedGridShows.length === 0) {
-                  return <div className="col-span-full py-16 text-center text-zinc-500 text-sm font-bold bg-[#1a1a1a] rounded-xl border border-zinc-800">No shows found in this category.</div>;
-                }
-
-                return paginatedGridShows.map(item => (
-                  <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-gradient-to-b from-[#291a1a] via-[#1a1313] to-[#0f0a0a] border-t border-x border-[#fcd385]/25 rounded-2xl overflow-hidden cursor-pointer group hover:-translate-y-1.5 hover:border-[#fcd385]/75 shadow-[0_8px_0_#080505,0_14px_24px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_12px_0_#1a0909,0_20px_35px_rgba(252,211,133,0.22),inset_0_1px_2px_rgba(255,255,255,0.35)] active:translate-y-[4px] active:shadow-[0_2px_0_#080505,inset_0_2px_6px_rgba(0,0,0,0.8)] transition-all duration-200 flex flex-col">
-                    <div className="m-1.5 aspect-[3/4] md:aspect-[4/5] relative overflow-hidden bg-black rounded-xl border border-white/10 shadow-[inset_0_2px_10px_rgba(0,0,0,0.9)]">
-                      <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                      {/* 5D မှန်သားအလင်းပြန်အလွှာ */}
-                      <div className="absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-black/60 pointer-events-none"></div>
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-100 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity pointer-events-none"></div>
-                      {/* 5D ဖောင်းကြွ Play ခလုတ် */}
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] border-t border-white/80 flex items-center justify-center shadow-[0_5px_0_#714f07,0_10px_25px_rgba(252,211,133,0.6),inset_0_2px_3px_rgba(255,255,255,0.9)] scale-90 group-hover:scale-100 transition-transform"><Play className="w-5 h-5 text-[#3e1717] ml-1 fill-[#3e1717]" /></div>
-                      </div>
-                      {/* 5D ဖောင်းကြွ EP တံဆိပ် */}
-                      <div className="absolute top-2 left-2 bg-gradient-to-b from-[#7f1d1d] via-[#450a0a] to-[#1a0303] border-t border-[#fcd385]/70 border-x border-[#fcd385]/30 text-[#fcd385] text-[10px] sm:text-xs font-black px-2.5 py-0.5 rounded-lg shadow-[0_3px_0_#090202,0_5px_10px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.3)]">{item.totalEpisodes} EP</div>
-                    </div>
-                    <div className="px-3 pb-3 pt-1.5 flex-1 flex flex-col justify-between">
-                      <h3 className="text-sm font-bold text-white line-clamp-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] group-hover:text-[#fcd385] transition-colors">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
-                      <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-wider font-semibold">{item.category}</p>
-                    </div>
+            {activeCategory === 'Latest Releases' && !searchQuery.trim() ? (
+              /* 5D CATEGORY CARDS GRID (0 Firebase Reads) */
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-5">
+                {categories.filter(c => c !== 'All').length === 0 ? (
+                  <div className="col-span-full py-16 text-center text-zinc-500 text-sm font-bold bg-[#1a1a1a] rounded-xl border border-zinc-800">
+                    No categories available.
                   </div>
-                ));
-              })()}
-            </div>
-
-            {/* Numbered Pagination Buttons */}
-            {!searchQuery && (
-              <div className="flex flex-wrap justify-center items-center gap-2.5 mt-12 font-black text-xs sm:text-sm">
-                <button 
-                  onClick={() => setUiPage(prev => Math.max(1, prev - 1))}
-                  disabled={uiPage === 1}
-                  className="px-3.5 py-2 sm:px-5 bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-t border-x border-zinc-600/40 rounded-xl shadow-[0_4px_0_#09090b,0_6px_12px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.18)] hover:text-white hover:border-zinc-500/70 active:translate-y-[3px] active:shadow-[0_1px_0_#09090b,inset_0_2px_5px_rgba(0,0,0,0.8)] disabled:opacity-35 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_4px_0_#09090b] transition-all duration-150"
-                >
-                  {lang === 'en' ? 'Previous' : 'ယခင်'}
-                </button>
-
-                {Array.from({ length: Math.ceil(filteredShows.length / itemsPerPage) }, (_, i) => i + 1).map(num => (
-                  <button 
-                    key={num} 
-                    onClick={() => setUiPage(num)}
-                    className={`min-w-[36px] h-9 sm:min-w-[42px] sm:h-10 flex items-center justify-center rounded-xl border-t border-x transition-all duration-150 active:translate-y-[3px] ${
-                      uiPage === num
-                        ? 'bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] text-[#3e1717] border-white/80 shadow-[0_4px_0_#714f07,0_6px_14px_rgba(252,211,133,0.4),inset_0_1px_2px_rgba(255,255,255,0.85)] active:shadow-[0_1px_0_#714f07,inset_0_2px_5px_rgba(0,0,0,0.5)]'
-                        : 'bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-zinc-600/40 hover:text-white hover:border-zinc-500/70 shadow-[0_4px_0_#09090b,0_6px_12px_rgba(0,0,0,0.65),inset_0_1px_1px_rgba(255,255,255,0.16)] active:shadow-[0_1px_0_#09090b,inset_0_2px_5px_rgba(0,0,0,0.8)]'
-                    }`}
-                  >
-                    {num}
-                  </button>
-                ))}
-
-                <button 
-                  onClick={async () => {
-                     const totalPages = Math.ceil(filteredShows.length / itemsPerPage);
-                     if (uiPage < totalPages) {
-                         setUiPage(uiPage + 1);
-                     } else if (hasMore) {
-                         await fetchMovies(true, activeCategory);
-                         setUiPage(uiPage + 1);
-                     }
-                  }}
-                  disabled={loadingMore || (uiPage === Math.ceil(filteredShows.length / itemsPerPage) && !hasMore)}
-                  className="px-3.5 py-2 sm:px-5 bg-gradient-to-b from-[#7f1d1d] via-[#4a1010] to-[#260606] text-[#fcd385] border-t border-x border-[#fcd385]/70 rounded-xl shadow-[0_4px_0_#1a0303,0_6px_14px_rgba(252,211,133,0.25),inset_0_1px_1px_rgba(255,255,255,0.3)] hover:brightness-110 active:translate-y-[3px] active:shadow-[0_1px_0_#1a0303,inset_0_2px_5px_rgba(0,0,0,0.8)] disabled:opacity-35 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_4px_0_#1a0303] transition-all duration-150 flex items-center gap-1.5"
-                >
-                  {loadingMore ? <RefreshCw className="w-4 h-4 animate-spin text-[#fcd385]" /> : (lang === 'en' ? 'Next page' : 'နောက်သို့')}
-                </button>
+                ) : (
+                  categories.filter(c => c !== 'All').map(cat => {
+                    const catImg = siteConfig.categoryImages?.[cat];
+                    return (
+                      <div
+                        key={cat}
+                        onClick={() => {
+                          setActiveCategory(cat);
+                          setUiPage(1);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="bg-gradient-to-b from-[#291a1a] via-[#1a1313] to-[#0f0a0a] border-t border-x border-[#fcd385]/25 rounded-2xl overflow-hidden cursor-pointer group hover:-translate-y-1.5 hover:border-[#fcd385]/75 shadow-[0_8px_0_#080505,0_14px_24px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_12px_0_#1a0909,0_20px_35px_rgba(252,211,133,0.22),inset_0_1px_2px_rgba(255,255,255,0.35)] active:translate-y-[4px] active:shadow-[0_2px_0_#080505,inset_0_2px_6px_rgba(0,0,0,0.8)] transition-all duration-200 flex flex-col"
+                      >
+                        <div className="m-1.5 aspect-[3/4] md:aspect-[4/5] relative overflow-hidden bg-gradient-to-br from-[#3e1717] via-[#1a0808] to-black rounded-xl border border-white/10 shadow-[inset_0_2px_10px_rgba(0,0,0,0.9)] flex items-center justify-center">
+                          {catImg ? (
+                            <img src={catImg} alt={cat} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
+                              <ListVideo className="w-10 h-10 text-[#fcd385]/60 group-hover:text-[#fcd385] transition-colors" />
+                              <span className="text-xs font-black text-[#fcd385]/80 uppercase tracking-wider">{cat}</span>
+                            </div>
+                          )}
+                          {/* 5D မှန်သားအလင်းပြန်အလွှာ */}
+                          <div className="absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-black/60 pointer-events-none"></div>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none"></div>
+                          {/* 5D ဖောင်းကြွ ဝင်ကြည့်ရန် ခလုတ် */}
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] border-t border-white/80 flex items-center justify-center shadow-[0_5px_0_#714f07,0_10px_25px_rgba(252,211,133,0.6),inset_0_2px_3px_rgba(255,255,255,0.9)] scale-90 group-hover:scale-100 transition-transform">
+                              <ChevronRight className="w-6 h-6 text-[#3e1717]" />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="px-3 pb-3 pt-1.5 flex-1 flex flex-col items-center justify-center text-center">
+                          <h3 className="text-sm font-black text-white line-clamp-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] group-hover:text-[#fcd385] transition-colors">
+                            {cat}
+                          </h3>
+                          <p className="text-[10px] text-[#fcd385]/70 mt-1 uppercase tracking-wider font-bold">
+                            {lang === 'en' ? 'Tap to explore' : 'ဝင်ရောက်ကြည့်ရှုရန်'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
+            ) : (
+              <>
+                {/* Movies Grid (10 Items per page) */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-5">
+                  {(() => {
+                    const paginatedGridShows = filteredShows.slice((uiPage - 1) * itemsPerPage, uiPage * itemsPerPage);
+                    
+                    if (loadingMore && paginatedGridShows.length === 0) {
+                      return (
+                        <div className="col-span-full py-16 flex flex-col items-center justify-center text-[#fcd385] bg-[#1a1a1a] rounded-xl border border-zinc-800 gap-3">
+                          <RefreshCw className="w-6 h-6 animate-spin" />
+                          <span className="text-xs font-bold tracking-wider">Loading...</span>
+                        </div>
+                      );
+                    }
+
+                    if (paginatedGridShows.length === 0) {
+                      return <div className="col-span-full py-16 text-center text-zinc-500 text-sm font-bold bg-[#1a1a1a] rounded-xl border border-zinc-800">No shows found in this category.</div>;
+                    }
+
+                    return paginatedGridShows.map(item => (
+                      <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-gradient-to-b from-[#291a1a] via-[#1a1313] to-[#0f0a0a] border-t border-x border-[#fcd385]/25 rounded-2xl overflow-hidden cursor-pointer group hover:-translate-y-1.5 hover:border-[#fcd385]/75 shadow-[0_8px_0_#080505,0_14px_24px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_12px_0_#1a0909,0_20px_35px_rgba(252,211,133,0.22),inset_0_1px_2px_rgba(255,255,255,0.35)] active:translate-y-[4px] active:shadow-[0_2px_0_#080505,inset_0_2px_6px_rgba(0,0,0,0.8)] transition-all duration-200 flex flex-col">
+                        <div className="m-1.5 aspect-[3/4] md:aspect-[4/5] relative overflow-hidden bg-black rounded-xl border border-white/10 shadow-[inset_0_2px_10px_rgba(0,0,0,0.9)]">
+                          <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                          {/* 5D မှန်သားအလင်းပြန်အလွှာ */}
+                          <div className="absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-black/60 pointer-events-none"></div>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-100 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                          {/* 5D ဖောင်းကြွ Play ခလုတ် */}
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] border-t border-white/80 flex items-center justify-center shadow-[0_5px_0_#714f07,0_10px_25px_rgba(252,211,133,0.6),inset_0_2px_3px_rgba(255,255,255,0.9)] scale-90 group-hover:scale-100 transition-transform"><Play className="w-5 h-5 text-[#3e1717] ml-1 fill-[#3e1717]" /></div>
+                          </div>
+                          {/* 5D ဖောင်းကြွ EP တံဆိပ် */}
+                          <div className="absolute top-2 left-2 bg-gradient-to-b from-[#7f1d1d] via-[#450a0a] to-[#1a0303] border-t border-[#fcd385]/70 border-x border-[#fcd385]/30 text-[#fcd385] text-[10px] sm:text-xs font-black px-2.5 py-0.5 rounded-lg shadow-[0_3px_0_#090202,0_5px_10px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.3)]">{item.totalEpisodes} EP</div>
+                        </div>
+                        <div className="px-3 pb-3 pt-1.5 flex-1 flex flex-col justify-between">
+                          <h3 className="text-sm font-bold text-white line-clamp-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] group-hover:text-[#fcd385] transition-colors">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
+                          <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-wider font-semibold">{item.category}</p>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+
+                {/* Numbered Pagination Buttons */}
+                {!searchQuery && (
+                  <div className="flex flex-wrap justify-center items-center gap-2.5 mt-12 font-black text-xs sm:text-sm">
+                    <button 
+                      onClick={() => setUiPage(prev => Math.max(1, prev - 1))}
+                      disabled={uiPage === 1}
+                      className="px-3.5 py-2 sm:px-5 bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-t border-x border-zinc-600/40 rounded-xl shadow-[0_4px_0_#09090b,0_6px_12px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.18)] hover:text-white hover:border-zinc-500/70 active:translate-y-[3px] active:shadow-[0_1px_0_#09090b,inset_0_2px_5px_rgba(0,0,0,0.8)] disabled:opacity-35 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_4px_0_#09090b] transition-all duration-150"
+                    >
+                      {lang === 'en' ? 'Previous' : 'ယခင်'}
+                    </button>
+
+                    {Array.from({ length: Math.ceil(filteredShows.length / itemsPerPage) }, (_, i) => i + 1).map(num => (
+                      <button 
+                        key={num} 
+                        onClick={() => setUiPage(num)}
+                        className={`min-w-[36px] h-9 sm:min-w-[42px] sm:h-10 flex items-center justify-center rounded-xl border-t border-x transition-all duration-150 active:translate-y-[3px] ${
+                          uiPage === num
+                            ? 'bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] text-[#3e1717] border-white/80 shadow-[0_4px_0_#714f07,0_6px_14px_rgba(252,211,133,0.4),inset_0_1px_2px_rgba(255,255,255,0.85)] active:shadow-[0_1px_0_#714f07,inset_0_2px_5px_rgba(0,0,0,0.5)]'
+                            : 'bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-zinc-600/40 hover:text-white hover:border-zinc-500/70 shadow-[0_4px_0_#09090b,0_6px_12px_rgba(0,0,0,0.65),inset_0_1px_1px_rgba(255,255,255,0.16)] active:shadow-[0_1px_0_#09090b,inset_0_2px_5px_rgba(0,0,0,0.8)]'
+                        }`}
+                      >
+                        {num}
+                      </button>
+                    ))}
+
+                    <button 
+                      onClick={async () => {
+                         const totalPages = Math.ceil(filteredShows.length / itemsPerPage);
+                         if (uiPage < totalPages) {
+                             setUiPage(uiPage + 1);
+                         } else if (hasMore) {
+                             await fetchMovies(true, activeCategory);
+                             setUiPage(uiPage + 1);
+                         }
+                      }}
+                      disabled={loadingMore || (uiPage === Math.ceil(filteredShows.length / itemsPerPage) && !hasMore)}
+                      className="px-3.5 py-2 sm:px-5 bg-gradient-to-b from-[#7f1d1d] via-[#4a1010] to-[#260606] text-[#fcd385] border-t border-x border-[#fcd385]/70 rounded-xl shadow-[0_4px_0_#1a0303,0_6px_14px_rgba(252,211,133,0.25),inset_0_1px_1px_rgba(255,255,255,0.3)] hover:brightness-110 active:translate-y-[3px] active:shadow-[0_1px_0_#1a0303,inset_0_2px_5px_rgba(0,0,0,0.8)] disabled:opacity-35 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_4px_0_#1a0303] transition-all duration-150 flex items-center gap-1.5"
+                    >
+                      {loadingMore ? <RefreshCw className="w-4 h-4 animate-spin text-[#fcd385]" /> : (lang === 'en' ? 'Next page' : 'နောက်သို့')}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </main>
         </>
