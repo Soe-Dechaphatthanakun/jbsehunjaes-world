@@ -296,6 +296,8 @@ export default function SweetieWorldApp() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [uiPage, setUiPage] = useState(1);
   const itemsPerPage = 10;
+  // Category Cache (ဖုန်း Memory ထဲတွင် ၁၀ မိနစ်ကြာ သိမ်းထားပြီး အသွားအပြန် 0 Read ဖြစ်စေရန်)
+  const categoryCacheRef = useRef<Record<string, { shows: VideoCardData[]; lastVisible: any; hasMore: boolean; timestamp: number }>>({});
 
   // NEW: Admin Content Summary States (Upgraded for Edit)
   const [adminSummary, setAdminSummary] = useState<Record<string, {count: number, shows: VideoCardData[]}>>({});
@@ -946,10 +948,22 @@ export default function SweetieWorldApp() {
     }
   };
 
-  // NEW: Search စာသားကိုပါ လက်ခံနိုင်အောင် ပြင်ဆင်ထားသည်
+   // NEW: Search စာသားနှင့် Category Cache (0 Read) တွဲဖက်စနစ်
   const fetchMovies = async (isLoadMore = false, cat = activeCategory, searchTxt = searchQuery) => {
     const safeSearch = searchTxt.toLowerCase().replace(/\s+/g, '');
     if (safeSearch.length === 0 && cat === 'Latest Releases') return;
+
+    const CACHE_TTL = 10 * 60 * 1000; // ၁၀ မိနစ်အတွင်း ပြန်ဝင်ပါက Cache မှ 0 Read ဖြင့် ချက်ချင်းပြမည်
+    if (!isLoadMore && safeSearch.length === 0) {
+        const cached = categoryCacheRef.current[cat];
+        if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+            setShows(cached.shows);
+            setLastVisible(cached.lastVisible);
+            setHasMore(cached.hasMore);
+            return;
+        }
+    }
+
     if (isLoadMore && (!lastVisible || !hasMore)) return;
     setLoadingMore(true);
     try {
@@ -975,30 +989,44 @@ export default function SweetieWorldApp() {
 
         if (!showsSnap.empty) {
             const newShows = showsSnap.docs.map(d => d.data() as VideoCardData);
+            const lastDoc = showsSnap.docs[showsSnap.docs.length - 1];
+            const hasMoreData = showsSnap.docs.length === 10;
+
             if (isLoadMore) {
-                setShows(prev => {
-                    const prevMap = new Map(prev.map(s => [s.id, s]));
-                    newShows.forEach(s => prevMap.set(s.id, s));
-                    const combined = Array.from(prevMap.values());
-                    combined.sort((a, b) => {
-                        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
-                        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
-                        return timeB - timeA;
-                    });
-                    return combined;
+                const baseList = (safeSearch.length === 0 && categoryCacheRef.current[cat]?.shows) ? categoryCacheRef.current[cat].shows : shows;
+                const prevMap = new Map(baseList.map(s => [s.id, s]));
+                newShows.forEach(s => prevMap.set(s.id, s));
+                const combined = Array.from(prevMap.values()).sort((a, b) => {
+                    const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
+                    const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
+                    return timeB - timeA;
                 });
+                setShows(combined);
+                if (safeSearch.length === 0) {
+                    categoryCacheRef.current[cat] = { shows: combined, lastVisible: lastDoc, hasMore: hasMoreData, timestamp: Date.now() };
+                }
             } else {
                 newShows.sort((a, b) => {
                     const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : parseInt(a.id.replace('vid-', '')) || 0;
                     const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : parseInt(b.id.replace('vid-', '')) || 0;
                     return timeB - timeA;
                 });
-                setShows(newShows); 
+                setShows(newShows);
+                if (safeSearch.length === 0) {
+                    categoryCacheRef.current[cat] = { shows: newShows, lastVisible: lastDoc, hasMore: hasMoreData, timestamp: Date.now() };
+                }
             }
-            setLastVisible(showsSnap.docs[showsSnap.docs.length - 1]);
-            setHasMore(showsSnap.docs.length === 10);
+            setLastVisible(lastDoc);
+            setHasMore(hasMoreData);
         } else {
-            if (!isLoadMore) setShows([]);
+            if (!isLoadMore) {
+                setShows([]);
+                if (safeSearch.length === 0) {
+                    categoryCacheRef.current[cat] = { shows: [], lastVisible: null, hasMore: false, timestamp: Date.now() };
+                }
+            } else if (safeSearch.length === 0 && categoryCacheRef.current[cat]) {
+                categoryCacheRef.current[cat].hasMore = false;
+            }
             setHasMore(false);
         }
     } catch (error: any) {
@@ -1008,12 +1036,15 @@ export default function SweetieWorldApp() {
     }
   };
 
-  // Category Tab ပြောင်းတိုင်း Page 1 မှ ပြန်စပြီး Data ၁၀ အသစ်ပြန်ဆွဲရန်
+  // Category Tab ပြောင်းတိုင်း Cache ရှိလျှင် 0 Read ဖြင့်ပြပြီး မရှိမှသာ Data ၁၀ ခုဆွဲရန်
   useEffect(() => {
      if (isInitialLoad) return;
      setUiPage(1);
      if (activeCategory === 'Latest Releases') return;
-     setShows([]);
+     const cached = categoryCacheRef.current[activeCategory];
+     if (!cached || Date.now() - cached.timestamp >= 10 * 60 * 1000) {
+         setShows([]);
+     }
      fetchMovies(false, activeCategory, '');
   }, [activeCategory]);
 
@@ -3646,6 +3677,7 @@ export default function SweetieWorldApp() {
   try {
     // 🌟 အထုပ်လိုက် မသိမ်းတော့ဘဲ သက်ဆိုင်ရာ ဇာတ်ကား Document တစ်ခုတည်းကိုသာ Shows Collection ထဲ သိမ်းမည်
     await setDoc(doc(db, "Shows", itemToSave.id), itemToSave);
+    categoryCacheRef.current = {};
 
     if (editingShowId) {
       const updatedShows = [itemToSave, ...shows.filter(s => s.id !== editingShowId)];
@@ -3787,6 +3819,7 @@ export default function SweetieWorldApp() {
         // 🌟 Firebase Database အစစ်ပေါ်မှ အပြီးတိုင်ဖျက်ပစ်မည်
         deleteDoc(doc(db, "Shows", s.id)).then(() => {
             setShows(shows.filter(x => x.id !== s.id)); 
+            categoryCacheRef.current = {};
         });
         showToast(t.msgDeleted); 
     }
