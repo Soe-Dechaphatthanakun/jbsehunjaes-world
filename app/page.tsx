@@ -418,6 +418,38 @@ export default function SweetieWorldApp() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [notiDropdownOpen, setNotiDropdownOpen] = useState(false);
   const [contactFabOpen, setContactFabOpen] = useState(false);
+  // Floating App Download & TG Widget States (0% Firebase Read/Write)
+  const [showAppFloat, setShowAppFloat] = useState(true);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [installGuideModalOpen, setInstallGuideModalOpen] = useState(false);
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone;
+    if (isStandalone) {
+      setShowAppFloat(false);
+    }
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
+
+  const handleInstallAppClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setShowAppFloat(false);
+      }
+      setDeferredPrompt(null);
+    } else {
+      setInstallGuideModalOpen(true);
+    }
+  };
   const [userDetailModal, setUserDetailModal] = useState<UserData | null>(null);
   
   // NEW: Dashboard Modal States
@@ -3882,6 +3914,108 @@ export default function SweetieWorldApp() {
             )}
           </main>
         </>
+      )}
+	
+	{/* --- FLOATING APP DOWNLOAD & TG CHANNEL WIDGET --- */}
+      {!adminDashboardOpen && (
+        <div className="fixed bottom-24 right-4 z-[140] font-sans flex flex-col items-center gap-3">
+          {/* 1. Download App Card */}
+          {showAppFloat && (
+            <div className="relative group">
+              <button
+                onClick={() => setShowAppFloat(false)}
+                title="Close"
+                className="absolute -top-2 -right-2 z-10 w-5 h-5 rounded-full bg-black/85 border border-white/25 text-zinc-300 hover:text-white flex items-center justify-center shadow-lg transition"
+              >
+                <X className="w-3 h-3" />
+              </button>
+
+              <button
+                onClick={handleInstallAppClick}
+                className="w-[82px] py-2.5 px-1.5 rounded-2xl bg-[#1c2333]/75 backdrop-blur-md border border-white/20 shadow-[0_8px_20px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.25)] hover:border-[#fcd385]/60 active:translate-y-[2px] transition-all flex flex-col items-center justify-center gap-1.5"
+              >
+                {/* 5D Mini Phone & Logo Icon */}
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#fcd385] via-[#d4af37] to-[#7f1d1d] p-[2px] shadow-[0_4px_10px_rgba(252,211,133,0.35)]">
+                  <div className="w-full h-full rounded-[10px] bg-gradient-to-b from-[#3e1717] to-[#160505] flex items-center justify-center">
+                    <Download className="w-5 h-5 text-[#fcd385]" />
+                  </div>
+                </div>
+                <span className="w-full text-center text-[10px] font-black text-white py-1 px-1.5 rounded-full bg-gradient-to-r from-[#d97706] via-[#b91c1c] to-[#7f1d1d] shadow-[0_2px_8px_rgba(220,38,38,0.5)] leading-none">
+                  {lang === 'en' ? 'Get App' : 'App ယူရန်'}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* 2. TG Channel Card (Uses Telegram link from Admin Settings) */}
+          {(() => {
+            const tgLink = siteConfig.socialLinks?.find(
+              (l) =>
+                l.platform.toLowerCase().includes('telegram') ||
+                l.platform.toLowerCase().includes('tg')
+            );
+            if (!tgLink || !tgLink.url) return null;
+            return (
+              <a
+                href={tgLink.url}
+                target="_blank"
+                rel="noreferrer"
+                className="w-[82px] py-2.5 px-1.5 rounded-2xl bg-[#1c2333]/75 backdrop-blur-md border border-white/20 shadow-[0_8px_20px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.25)] hover:border-sky-400/70 active:translate-y-[2px] transition-all flex flex-col items-center justify-center gap-1.5"
+              >
+                <div className="w-10 h-10 rounded-full bg-gradient-to-b from-[#38bdf8] to-[#0284c7] flex items-center justify-center shadow-[0_4px_10px_rgba(14,165,233,0.45),inset_0_1px_2px_rgba(255,255,255,0.5)]">
+                  <Send className="w-5 h-5 text-white -ml-0.5 mt-0.5" />
+                </div>
+                <span className="text-[10px] font-bold text-white tracking-wide">
+                  {lang === 'en' ? 'TG Channel' : 'TG ချန်နယ်'}
+                </span>
+              </a>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* --- APP INSTALL GUIDE MODAL (For iPhone Safari / In-App Browsers) --- */}
+      {installGuideModalOpen && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-sans">
+          <div className="bg-gradient-to-b from-[#2b0303] to-[#161616] border border-[#fcd385]/30 rounded-2xl w-full max-w-sm p-6 relative shadow-[0_20px_50px_rgba(0,0,0,0.9)]">
+            <button
+              onClick={() => setInstallGuideModalOpen(false)}
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="w-14 h-14 rounded-2xl bg-[#fcd385]/10 border border-[#fcd385]/30 flex items-center justify-center mx-auto mb-4">
+              <Download className="w-7 h-7 text-[#fcd385]" />
+            </div>
+            <h3 className="text-lg font-black text-[#fcd385] text-center mb-3">
+              {lang === 'en' ? 'Install App on Phone' : 'ဖုန်းတွင် App အဖြစ်ထည့်သွင်းနည်း'}
+            </h3>
+            <div className="space-y-3 text-xs text-zinc-300 bg-black/40 p-4 rounded-xl border border-zinc-800 leading-relaxed">
+              <div>
+                <p className="font-bold text-white mb-1">Android (Chrome):</p>
+                <p>
+                  {lang === 'en'
+                    ? 'Tap the (⋮) menu at top-right → Tap "Install app" or "Add to Home screen".'
+                    : 'Chrome ညာဘက်အပေါ်ထောင့် (⋮) ကိုနှိပ်ပြီး "Install app" သို့မဟုတ် "Add to Home screen" ကိုနှိပ်ပါ။'}
+                </p>
+              </div>
+              <div className="border-t border-zinc-800 pt-3">
+                <p className="font-bold text-white mb-1">iPhone / iPad (Safari):</p>
+                <p>
+                  {lang === 'en'
+                    ? 'Open in Safari → Tap the Share icon at the bottom → Tap "Add to Home Screen".'
+                    : 'Safari ဖြင့်ဖွင့်ပါ → အောက်ခြေအလယ်မှ Share ခလုတ်ကိုနှိပ်ပြီး "Add to Home Screen" ကိုနှိပ်ပါ။'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setInstallGuideModalOpen(false)}
+              className="w-full mt-5 bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] text-[#3e1717] font-black py-2.5 rounded-xl shadow-[0_4px_0_#714f07] active:translate-y-[3px] transition-all"
+            >
+              OK
+            </button>
+          </div>
+        </div>
       )}
 
       {/* --- FLOATING CONTACT BUTTON (FAB) --- */}
