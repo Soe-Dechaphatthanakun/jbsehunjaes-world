@@ -3946,31 +3946,6 @@ export default function SweetieWorldApp() {
               </button>
             </div>
           )}
-
-          {/* 2. TG Channel Card (Uses Telegram link from Admin Settings) */}
-          {(() => {
-            const tgLink = siteConfig.socialLinks?.find(
-              (l) =>
-                l.platform.toLowerCase().includes('telegram') ||
-                l.platform.toLowerCase().includes('tg')
-            );
-            if (!tgLink || !tgLink.url) return null;
-            return (
-              <a
-                href={tgLink.url}
-                target="_blank"
-                rel="noreferrer"
-                className="w-[82px] py-2.5 px-1.5 rounded-2xl bg-[#1c2333]/75 backdrop-blur-md border border-white/20 shadow-[0_8px_20px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.25)] hover:border-sky-400/70 active:translate-y-[2px] transition-all flex flex-col items-center justify-center gap-1.5"
-              >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-b from-[#38bdf8] to-[#0284c7] flex items-center justify-center shadow-[0_4px_10px_rgba(14,165,233,0.45),inset_0_1px_2px_rgba(255,255,255,0.5)]">
-                  <Send className="w-5 h-5 text-white -ml-0.5 mt-0.5" />
-                </div>
-                <span className="text-[10px] font-bold text-white tracking-wide">
-                  {lang === 'en' ? 'TG Channel' : 'TG ချန်နယ်'}
-                </span>
-              </a>
-            );
-          })()}
         </div>
       )}
 
