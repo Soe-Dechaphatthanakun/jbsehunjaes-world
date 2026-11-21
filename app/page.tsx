@@ -1921,7 +1921,7 @@ export default function SweetieWorldApp() {
           {currentUser ? (
             <div className="flex items-center gap-2 sm:gap-4 font-sans relative">
               {currentUser.role === 'admin' && (
-                <button onClick={() => {syncLatestData(); setAdminDashboardOpen(true);}} className="hidden sm:flex text-xs bg-gradient-to-r from-[#b30000] to-[#660000] hover:brightness-110 px-3 py-1.5 rounded-lg font-bold transition items-center gap-1 shadow-lg">
+                <button onClick={() => {syncLatestData(); setAdminDashboardOpen(true);}} className="hidden sm:flex text-xs bg-gradient-to-b from-[#dc2626] via-[#991b1b] to-[#450a0a] text-white border-t border-red-300/60 hover:brightness-110 px-3.5 py-1.5 rounded-xl font-black transition-all duration-150 items-center gap-1.5 shadow-[0_4px_0_#2b0505,0_6px_14px_rgba(220,38,38,0.4),inset_0_1px_2px_rgba(255,255,255,0.4)] active:translate-y-[3px] active:shadow-[0_1px_0_#2b0505]">
                   <ShieldCheck className="w-4 h-4" /> Admin
                 </button>
               )}
@@ -1996,19 +1996,19 @@ export default function SweetieWorldApp() {
                   setPayStep('menu'); 
                   setPointModalOpen(true);
                 }
-              }} className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border-2 border-[#fcd385] text-[#fcd385] px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-sm sm:text-base font-black shadow-[0_0_10px_rgba(252,211,133,0.3)] hover:brightness-110 transition shrink-0">
-                <Coins className="w-5 h-5 sm:w-5 sm:h-5 text-yellow-400" /> <span>{currentUser.points} {t.pts}</span>
+              }} className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-b from-[#4a1010] via-[#2b0303] to-[#140101] border-t-2 border-x border-[#fcd385] text-[#fcd385] px-3.5 py-1.5 sm:px-4 sm:py-1.5 rounded-full text-sm sm:text-base font-black shadow-[0_4px_0_#714f07,0_7px_16px_rgba(252,211,133,0.35),inset_0_1px_2px_rgba(255,255,255,0.35)] hover:brightness-110 active:translate-y-[3px] active:shadow-[0_1px_0_#714f07,inset_0_2px_5px_rgba(0,0,0,0.8)] transition-all duration-150 shrink-0">
+                <Coins className="w-5 h-5 text-yellow-400 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]" /> <span className="drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">{currentUser.points} {t.pts}</span>
               </button>
               
               {/* BIGGER USER PROFILE BUTTON */}
-              <div onClick={() => {syncLatestData(); setUserMenuTab('menu'); setUserMenuOpen(true);}} className="cursor-pointer p-2 sm:p-2 bg-[#fcd385] rounded-full hover:bg-yellow-400 transition shadow-[0_0_10px_rgba(252,211,133,0.4)] border-2 border-[#d4af37] flex items-center justify-center shrink-0">
-                 <User className="w-5 h-5 sm:w-5 sm:h-5 text-[#3e1717]" />
+              <div onClick={() => {syncLatestData(); setUserMenuTab('menu'); setUserMenuOpen(true);}} className="cursor-pointer p-2 bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] rounded-full hover:brightness-110 active:translate-y-[3px] transition-all duration-150 border-t border-white/80 shadow-[0_4px_0_#714f07,0_7px_14px_rgba(252,211,133,0.4),inset_0_1px_2px_rgba(255,255,255,0.85)] active:shadow-[0_1px_0_#714f07] flex items-center justify-center shrink-0">
+                 <User className="w-5 h-5 text-[#3e1717]" />
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2 font-sans">
-              <button onClick={() => {setAuthForm({username:'', email:'', password:''}); setAuthError(''); setAuthMode('login'); setAuthModalOpen(true);}} className="text-xs sm:text-sm font-bold bg-[#fcd385] text-[#3e1717] px-3 sm:px-5 py-1.5 rounded-md hover:bg-yellow-400 transition shadow-lg">{t.loginBtn}</button>
-              <button onClick={() => {setAuthForm({username:'', email:'', password:''}); setAuthError(''); setAuthMode('register'); setAuthModalOpen(true);}} className="hidden sm:block text-sm font-bold border border-[#fcd385] text-[#fcd385] px-5 py-1.5 rounded-md hover:bg-[#fcd385]/10 transition">{t.signUpBtn}</button>
+            <div className="flex items-center gap-2.5 font-sans">
+              <button onClick={() => {setAuthForm({username:'', email:'', password:''}); setAuthError(''); setAuthMode('login'); setAuthModalOpen(true);}} className="text-xs sm:text-sm font-black bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] text-[#3e1717] px-3.5 sm:px-5 py-1.5 rounded-xl border-t border-white/80 shadow-[0_4px_0_#714f07,0_6px_14px_rgba(252,211,133,0.35),inset_0_1px_2px_rgba(255,255,255,0.85)] hover:brightness-110 active:translate-y-[3px] active:shadow-[0_1px_0_#714f07] transition-all duration-150">{t.loginBtn}</button>
+              <button onClick={() => {setAuthForm({username:'', email:'', password:''}); setAuthError(''); setAuthMode('register'); setAuthModalOpen(true);}} className="hidden sm:block text-sm font-black bg-gradient-to-b from-[#3b1515] via-[#210909] to-[#110303] border-t border-x border-[#fcd385]/70 text-[#fcd385] px-5 py-1.5 rounded-xl shadow-[0_4px_0_#1a0303,0_6px_12px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.25)] hover:brightness-125 active:translate-y-[3px] active:shadow-[0_1px_0_#1a0303] transition-all duration-150">{t.signUpBtn}</button>
             </div>
           )}
         </div>
@@ -2488,8 +2488,8 @@ export default function SweetieWorldApp() {
               <div className="animate-fade-in space-y-6">
                 <div className="flex justify-between items-center">
                   <h3 className="text-xl font-bold text-white border-l-4 border-[#fcd385] pl-3">{t.pointReqs}</h3>
-                  <button onClick={() => syncLatestData(true)} className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-[#fcd385] px-3 py-2 rounded-lg transition shadow-lg border border-zinc-700">
-                      <RefreshCw className="w-4 h-4" /> Sync
+                  <button onClick={() => syncLatestData(true)} className="group flex items-center gap-2 text-xs font-black tracking-wide bg-gradient-to-b from-[#ffe29f] via-[#fcd385] to-[#b8860b] text-[#3e1717] px-4 py-2 rounded-xl border-t border-white/80 shadow-[0_5px_0_#714f07,0_8px_16px_rgba(252,211,133,0.3),inset_0_1px_2px_rgba(255,255,255,0.85)] hover:brightness-110 active:translate-y-[4px] active:shadow-[0_1px_0_#714f07,inset_0_2px_5px_rgba(0,0,0,0.5)] transition-all duration-150">
+                      <RefreshCw className="w-4 h-4 group-active:rotate-180 transition-transform duration-300" /> Sync
                   </button>
                 </div>
                 <div className="bg-[#1f1f1f] p-5 rounded-2xl border border-zinc-800 font-sans">
@@ -3777,13 +3777,15 @@ export default function SweetieWorldApp() {
         /* HOME VIEW */
         <>
          
-	<div className="w-full px-4 mt-6 font-sans">
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2">
+	<div className="w-full px-4 mt-5 font-sans">
+            <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar py-3">
               
               {/* Latest Releases ခလုတ် (ပထမဆုံး နေရာတွင်ထားမည်) */}
               <button onClick={() => { setActiveCategory('Latest Releases'); setUiPage(1); }}
-                className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition border ${
-                  activeCategory === 'Latest Releases' ? 'bg-[#3e1717] text-[#fcd385] border-[#fcd385]' : 'bg-[#1f1f1f] text-zinc-400 border-zinc-800 hover:text-white'
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-black tracking-wide transition-all duration-150 border-t border-x active:translate-y-[3px] ${
+                  activeCategory === 'Latest Releases'
+                    ? 'bg-gradient-to-b from-[#7f1d1d] via-[#4a1010] to-[#260606] text-[#fcd385] border-[#fcd385]/80 shadow-[0_4px_0_#1a0303,0_6px_14px_rgba(252,211,133,0.28),inset_0_1px_1px_rgba(255,255,255,0.35)] active:shadow-[0_1px_0_#1a0303]'
+                    : 'bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-zinc-600/40 hover:text-white hover:border-zinc-500/70 shadow-[0_4px_0_#09090b,0_5px_10px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.16)] active:shadow-[0_1px_0_#09090b]'
                 }`}>
                 {t.latestReleases}
               </button>
@@ -3791,8 +3793,10 @@ export default function SweetieWorldApp() {
               {/* ကျန်တဲ့ Category အခြားခလုတ်များ */}
               {categories.filter(c => c !== 'All').map((cat) => (
                 <button key={cat} onClick={() => { setActiveCategory(cat); setUiPage(1); }}
-                  className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition border ${
-                    activeCategory === cat ? 'bg-[#3e1717] text-[#fcd385] border-[#fcd385]' : 'bg-[#1f1f1f] text-zinc-400 border-zinc-800 hover:text-white'
+                  className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-black tracking-wide transition-all duration-150 border-t border-x active:translate-y-[3px] ${
+                    activeCategory === cat
+                      ? 'bg-gradient-to-b from-[#7f1d1d] via-[#4a1010] to-[#260606] text-[#fcd385] border-[#fcd385]/80 shadow-[0_4px_0_#1a0303,0_6px_14px_rgba(252,211,133,0.28),inset_0_1px_1px_rgba(255,255,255,0.35)] active:shadow-[0_1px_0_#1a0303]'
+                      : 'bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-zinc-600/40 hover:text-white hover:border-zinc-500/70 shadow-[0_4px_0_#09090b,0_5px_10px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.16)] active:shadow-[0_1px_0_#09090b]'
                   }`}>
                   {cat}
                 </button>
@@ -3812,18 +3816,22 @@ export default function SweetieWorldApp() {
                 }
 
                 return paginatedGridShows.map(item => (
-                  <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-[#1a1a1a] border border-zinc-800 rounded-xl overflow-hidden cursor-pointer group hover:border-[#fcd385]/50 hover:shadow-[0_0_15px_rgba(252,211,133,0.15)] transition-all flex flex-col shadow-lg">
-                    <div className="aspect-[3/4] md:aspect-[4/5] relative overflow-hidden bg-black">
-                      <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"></div>
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="w-12 h-12 rounded-full bg-[#fcd385]/90 flex items-center justify-center shadow-[0_0_20px_rgba(252,211,133,0.5)] scale-90 group-hover:scale-100 transition-transform"><Play className="w-5 h-5 text-[#3e1717] ml-1" /></div>
+                  <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-gradient-to-b from-[#291a1a] via-[#1a1313] to-[#0f0a0a] border-t border-x border-[#fcd385]/25 rounded-2xl overflow-hidden cursor-pointer group hover:-translate-y-1.5 hover:border-[#fcd385]/75 shadow-[0_8px_0_#080505,0_14px_24px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_12px_0_#1a0909,0_20px_35px_rgba(252,211,133,0.22),inset_0_1px_2px_rgba(255,255,255,0.35)] active:translate-y-[4px] active:shadow-[0_2px_0_#080505,inset_0_2px_6px_rgba(0,0,0,0.8)] transition-all duration-200 flex flex-col">
+                    <div className="m-1.5 aspect-[3/4] md:aspect-[4/5] relative overflow-hidden bg-black rounded-xl border border-white/10 shadow-[inset_0_2px_10px_rgba(0,0,0,0.9)]">
+                      <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                      {/* 5D မှန်သားအလင်းပြန်အလွှာ */}
+                      <div className="absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-black/60 pointer-events-none"></div>
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-100 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                      {/* 5D ဖောင်းကြွ Play ခလုတ် */}
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] border-t border-white/80 flex items-center justify-center shadow-[0_5px_0_#714f07,0_10px_25px_rgba(252,211,133,0.6),inset_0_2px_3px_rgba(255,255,255,0.9)] scale-90 group-hover:scale-100 transition-transform"><Play className="w-5 h-5 text-[#3e1717] ml-1 fill-[#3e1717]" /></div>
                       </div>
-                      <div className="absolute top-2 left-2 bg-gradient-to-r from-[#2b0303] to-[#1a0101] border border-[#fcd385]/30 text-[#fcd385] text-[10px] sm:text-xs font-black px-2 py-0.5 rounded shadow">{item.totalEpisodes} EP</div>
+                      {/* 5D ဖောင်းကြွ EP တံဆိပ် */}
+                      <div className="absolute top-2 left-2 bg-gradient-to-b from-[#7f1d1d] via-[#450a0a] to-[#1a0303] border-t border-[#fcd385]/70 border-x border-[#fcd385]/30 text-[#fcd385] text-[10px] sm:text-xs font-black px-2.5 py-0.5 rounded-lg shadow-[0_3px_0_#090202,0_5px_10px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.3)]">{item.totalEpisodes} EP</div>
                     </div>
-                    <div className="p-3 flex-1 flex flex-col justify-between">
-                      <h3 className="text-sm font-bold text-white line-clamp-1">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
-                      <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">{item.category}</p>
+                    <div className="px-3 pb-3 pt-1.5 flex-1 flex flex-col justify-between">
+                      <h3 className="text-sm font-bold text-white line-clamp-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] group-hover:text-[#fcd385] transition-colors">{lang === 'en' ? (item.title_en || item.title_mm) : (item.title_mm || item.title_en)}</h3>
+                      <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-wider font-semibold">{item.category}</p>
                     </div>
                   </div>
                 ));
@@ -3832,11 +3840,11 @@ export default function SweetieWorldApp() {
 
             {/* Numbered Pagination Buttons */}
             {!searchQuery && (
-              <div className="flex flex-wrap justify-center items-center gap-2 mt-12 font-bold text-xs sm:text-sm">
+              <div className="flex flex-wrap justify-center items-center gap-2.5 mt-12 font-black text-xs sm:text-sm">
                 <button 
                   onClick={() => setUiPage(prev => Math.max(1, prev - 1))}
                   disabled={uiPage === 1}
-                  className="px-3 py-2 sm:px-4 bg-black text-zinc-400 border border-zinc-800 rounded-lg hover:text-white hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  className="px-3.5 py-2 sm:px-5 bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-t border-x border-zinc-600/40 rounded-xl shadow-[0_4px_0_#09090b,0_6px_12px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.18)] hover:text-white hover:border-zinc-500/70 active:translate-y-[3px] active:shadow-[0_1px_0_#09090b,inset_0_2px_5px_rgba(0,0,0,0.8)] disabled:opacity-35 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_4px_0_#09090b] transition-all duration-150"
                 >
                   {lang === 'en' ? 'Previous' : 'ယခင်'}
                 </button>
@@ -3845,7 +3853,11 @@ export default function SweetieWorldApp() {
                   <button 
                     key={num} 
                     onClick={() => setUiPage(num)}
-                    className={`min-w-[32px] h-8 sm:min-w-[40px] sm:h-10 flex items-center justify-center rounded-lg transition border ${uiPage === num ? 'bg-gradient-to-r from-[#fcd385] to-[#d4af37] text-[#3e1717] border-[#fcd385] shadow-[0_0_10px_rgba(252,211,133,0.4)]' : 'bg-black text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-500'}`}
+                    className={`min-w-[36px] h-9 sm:min-w-[42px] sm:h-10 flex items-center justify-center rounded-xl border-t border-x transition-all duration-150 active:translate-y-[3px] ${
+                      uiPage === num
+                        ? 'bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] text-[#3e1717] border-white/80 shadow-[0_4px_0_#714f07,0_6px_14px_rgba(252,211,133,0.4),inset_0_1px_2px_rgba(255,255,255,0.85)] active:shadow-[0_1px_0_#714f07,inset_0_2px_5px_rgba(0,0,0,0.5)]'
+                        : 'bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-zinc-600/40 hover:text-white hover:border-zinc-500/70 shadow-[0_4px_0_#09090b,0_6px_12px_rgba(0,0,0,0.65),inset_0_1px_1px_rgba(255,255,255,0.16)] active:shadow-[0_1px_0_#09090b,inset_0_2px_5px_rgba(0,0,0,0.8)]'
+                    }`}
                   >
                     {num}
                   </button>
@@ -3862,7 +3874,7 @@ export default function SweetieWorldApp() {
                      }
                   }}
                   disabled={loadingMore || (uiPage === Math.ceil(filteredShows.length / itemsPerPage) && !hasMore)}
-                  className="px-3 py-2 sm:px-4 bg-[#1f1f1f] text-[#fcd385] border border-[#fcd385]/30 rounded-lg hover:bg-[#2b0303] hover:border-[#fcd385] disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center gap-1"
+                  className="px-3.5 py-2 sm:px-5 bg-gradient-to-b from-[#7f1d1d] via-[#4a1010] to-[#260606] text-[#fcd385] border-t border-x border-[#fcd385]/70 rounded-xl shadow-[0_4px_0_#1a0303,0_6px_14px_rgba(252,211,133,0.25),inset_0_1px_1px_rgba(255,255,255,0.3)] hover:brightness-110 active:translate-y-[3px] active:shadow-[0_1px_0_#1a0303,inset_0_2px_5px_rgba(0,0,0,0.8)] disabled:opacity-35 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_4px_0_#1a0303] transition-all duration-150 flex items-center gap-1.5"
                 >
                   {loadingMore ? <RefreshCw className="w-4 h-4 animate-spin text-[#fcd385]" /> : (lang === 'en' ? 'Next page' : 'နောက်သို့')}
                 </button>
@@ -3996,9 +4008,25 @@ export default function SweetieWorldApp() {
                                    setScheduleAlert({isOpen: true, date: ep.releaseDate, show: selectedShow});
                                 }
                              }
-                          }} className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition ${showAsAvailable ? 'bg-[#1a1a1a] border-[#fcd385]/20 hover:border-[#fcd385]/50 text-white' : 'bg-[#1a1a1a] border-zinc-800 text-zinc-300 hover:bg-black/80'}`}>
-                             <span className="font-bold text-sm text-white mb-1">{ep.epLabel}</span>
-                             <div className={`text-xs px-3 py-1.5 rounded-md font-bold w-full text-center ${showAsAvailable ? 'bg-[#3e0a0a] text-red-200' : isVipUnlocked ? 'bg-[#fcd385]/20 text-[#fcd385]' : (isVipOnly ? 'bg-purple-900/50 text-purple-400' : 'bg-black/50 text-zinc-500')}`}>
+                          }} className={`group p-3.5 rounded-2xl border-t border-x flex flex-col items-center justify-center gap-2.5 transition-all duration-150 active:translate-y-[4px] ${
+                            showAsAvailable
+                              ? 'bg-gradient-to-b from-[#2b1414] via-[#1b0c0c] to-[#110707] border-[#fcd385]/30 hover:border-[#fcd385]/70 text-white shadow-[0_6px_0_#0d0404,0_10px_20px_rgba(0,0,0,0.75),inset_0_1px_1px_rgba(255,255,255,0.18)] active:shadow-[0_2px_0_#0d0404,inset_0_2px_6px_rgba(0,0,0,0.8)]'
+                              : isVipUnlocked
+                              ? 'bg-gradient-to-b from-[#302412] via-[#1f170b] to-[#120d06] border-[#fcd385]/40 hover:border-[#fcd385] text-white shadow-[0_6px_0_#140d04,0_10px_20px_rgba(252,211,133,0.18),inset_0_1px_1px_rgba(255,255,255,0.22)] active:shadow-[0_2px_0_#140d04,inset_0_2px_6px_rgba(0,0,0,0.8)]'
+                              : isVipOnly
+                              ? 'bg-gradient-to-b from-[#261436] via-[#180c24] to-[#0f0717] border-purple-400/30 hover:border-purple-400/70 text-white shadow-[0_6px_0_#12061c,0_10px_20px_rgba(147,51,234,0.22),inset_0_1px_1px_rgba(255,255,255,0.18)] active:shadow-[0_2px_0_#12061c,inset_0_2px_6px_rgba(0,0,0,0.8)]'
+                              : 'bg-gradient-to-b from-[#242427] via-[#18181b] to-[#101012] border-zinc-600/30 hover:border-zinc-500/60 text-zinc-300 shadow-[0_6px_0_#09090b,0_10px_18px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.14)] active:shadow-[0_2px_0_#09090b,inset_0_2px_6px_rgba(0,0,0,0.8)]'
+                          }`}>
+                             <span className="font-black text-sm text-white tracking-wide drop-shadow-[0_2px_2px_rgba(0,0,0,0.9)]">{ep.epLabel}</span>
+                             <div className={`text-xs px-3 py-2 rounded-xl font-black w-full text-center tracking-wide border-t transition-all duration-150 group-active:translate-y-[1px] ${
+                               showAsAvailable
+                                 ? 'bg-gradient-to-b from-[#b91c1c] via-[#881313] to-[#450a0a] text-[#ffedd5] border-red-300/50 shadow-[0_4px_0_#2b0505,0_6px_12px_rgba(220,38,38,0.4),inset_0_1px_2px_rgba(255,255,255,0.4)] group-hover:brightness-110'
+                                 : isVipUnlocked
+                                 ? 'bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] text-[#3e1717] border-white/80 shadow-[0_4px_0_#714f07,0_6px_14px_rgba(252,211,133,0.45),inset_0_1px_2px_rgba(255,255,255,0.85)] group-hover:brightness-110'
+                                 : isVipOnly
+                                 ? 'bg-gradient-to-b from-purple-500 via-purple-700 to-purple-950 text-purple-100 border-purple-300/60 shadow-[0_4px_0_#3b0764,0_6px_14px_rgba(168,85,247,0.45),inset_0_1px_2px_rgba(255,255,255,0.45)] group-hover:brightness-110'
+                                 : 'bg-gradient-to-b from-zinc-600 via-zinc-700 to-zinc-900 text-zinc-200 border-zinc-400/40 shadow-[0_4px_0_#18181b,0_5px_10px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.25)]'
+                             }`}>
                                 {showAsAvailable ? (isVipOnly && !isLongSeries ? 'Get via Bot' : t.watchBtn) : isVipUnlocked ? (lang === 'en' ? 'Watch VIP' : 'VIP ကြည့်ရန်') : (isVipOnly ? (!isLongSeries ? `VIP Only (${selectedShow.pointsPerEp} PTS)` : 'VIP Only') : t.waitBtn)}
                              </div>
                           </button>
@@ -4024,7 +4052,7 @@ export default function SweetieWorldApp() {
                             <p className="text-zinc-300 text-xs sm:text-sm mt-1">{t.vipUnlockedDesc}</p>
                           </div>
                           {selectedShow.vipTelegramLink && (
-                             <button onClick={() => { handleGetTelegramLink(selectedShow.vipTelegramLink || ''); }} disabled={isGeneratingTgLink} className="shrink-0 px-6 py-2 bg-[#fcd385] text-[#3e1717] font-black rounded-lg hover:bg-yellow-400 transition shadow-[0_0_15px_rgba(252,211,133,0.4)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                             <button onClick={() => { handleGetTelegramLink(selectedShow.vipTelegramLink || ''); }} disabled={isGeneratingTgLink} className="shrink-0 px-6 py-2.5 bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] text-[#3e1717] font-black rounded-xl border-t border-white/80 shadow-[0_5px_0_#714f07,0_8px_18px_rgba(252,211,133,0.4),inset_0_1px_2px_rgba(255,255,255,0.85)] hover:brightness-110 active:translate-y-[4px] active:shadow-[0_1px_0_#714f07,inset_0_2px_5px_rgba(0,0,0,0.5)] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                                 {isGeneratingTgLink ? ( <><span className="w-4 h-4 border-2 border-[#3e1717] border-t-transparent rounded-full animate-spin"></span> Loading...</> ) : ( "Watch on Telegram" )}
                              </button>
                           )}
@@ -4035,7 +4063,7 @@ export default function SweetieWorldApp() {
                              <h4 className="text-[#fcd385] font-black flex items-center gap-2"><Sparkles className="w-5 h-5"/> {t.vipTitle}</h4>
                              <p className="text-zinc-300 text-xs sm:text-sm mt-1">{t.vipDesc}</p>
                           </div>
-                          <button onClick={() => setVipModalShow(selectedShow)} className="shrink-0 px-6 py-2.5 bg-[#fcd385] text-[#3e1717] font-black rounded-lg hover:bg-yellow-400 transition shadow-[0_0_15px_rgba(252,211,133,0.2)]">
+                          <button onClick={() => setVipModalShow(selectedShow)} className="shrink-0 px-6 py-2.5 bg-gradient-to-b from-[#fef08a] via-[#fcd385] to-[#b48312] text-[#3e1717] font-black rounded-xl border-t border-white/80 shadow-[0_5px_0_#714f07,0_8px_18px_rgba(252,211,133,0.35),inset_0_1px_2px_rgba(255,255,255,0.85)] hover:brightness-110 active:translate-y-[4px] active:shadow-[0_1px_0_#714f07,inset_0_2px_5px_rgba(0,0,0,0.5)] transition-all duration-150">
                              {t.joinVip}
                           </button>
                        </div>
