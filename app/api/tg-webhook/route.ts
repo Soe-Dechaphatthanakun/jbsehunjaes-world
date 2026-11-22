@@ -183,6 +183,33 @@ export async function POST(request: Request) {
           ep.links.push({ platform: 'Telegram', url: tgLink });
           show.updatedAt = new Date().toISOString();
           await setDoc(showRef, show);
+
+          // SiteData/latestShows ၏ အပေါ်ဆုံးသို့ ဤဇာတ်ကားကို Auto ရွှေ့သိမ်းပေးမည်
+          try {
+            const latestRef = doc(db, "SiteData", "latestShows");
+            const latestSnap = await getDoc(latestRef);
+            if (latestSnap.exists() && Array.isArray(latestSnap.data().data) && latestSnap.data().data.length > 0) {
+              const currentLatest = latestSnap.data().data as any[];
+              const liteShow = {
+                id: show.id || movieId,
+                title_en: show.title_en || '',
+                title_mm: show.title_mm || '',
+                image: show.image || '',
+                category: show.category || 'All',
+                description: '',
+                totalEpisodes: show.totalEpisodes ?? show.episodes.length,
+                pointsPerEp: show.pointsPerEp ?? 20,
+                episodes: [],
+                updatedAt: show.updatedAt,
+                isLite: true
+              };
+              const updatedLatest = [liteShow, ...currentLatest.filter((s: any) => s.id !== liteShow.id)].slice(0, 10);
+              await setDoc(latestRef, { data: updatedLatest });
+            }
+          } catch (latestErr) {
+            console.error("Update latestShows error:", latestErr);
+          }
+
           console.log(`Auto-linked ${movieId} Episode ${epNumber} successfully`);
         }
       }
