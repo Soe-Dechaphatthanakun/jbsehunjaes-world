@@ -37,7 +37,7 @@ const secondaryAuth = getAuth(secondaryApp);
 // ------------------------------------------------------------------
 interface EpLink { platform: string; url: string; }
 interface EpisodeData { epLabel: string; links: EpLink[]; releaseDateRaw?: string; releaseDate: string; isVipOnly?: boolean; }
-interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; seriesType?: 'long' | 'mini'; updatedAt?: string; searchKeywords?: string[]; }
+interface VideoCardData { id: string; title_en: string; title_mm: string; image: string; category: string; description: string; totalEpisodes: number; pointsPerEp: number; episodes: EpisodeData[]; vipTelegramLink?: string; seriesType?: 'long' | 'mini'; updatedAt?: string; searchKeywords?: string[]; isLite?: boolean; }
 
 // History tracking for usage and admin bonuses
 interface UserHistoryLog { id: string; type: 'usage' | 'admin_bonus' | 'buy_vip' | 'buy_ep'; title: string; amount: number; date: string; remainingBalance?: number; }
@@ -106,7 +106,7 @@ const INITIAL_USERS: UserData[] = [
 const TRANSLATIONS = {
   en: {
     loginBtn: "LOGIN", signUpBtn: "REGISTER", adminPanel: "Admin Panel", logout: "Logout", pts: "PTS",
-    latestReleases: "Categories", collection: "Collection", episodes: "Episodes", searchPlaceholder: "Search drama, movie...",
+    latestReleases: "Latest Releases", categoriesTab: "Categories", collection: "Collection", episodes: "Episodes", searchPlaceholder: "Search drama, movie...",
     home: "Home", promotions: "Promotions", faq: "FAQ & Guide", email: "Email or Username", password: "Password", 
     forgotPwd: "Forgot password?", noAccount: "Don't have an account?", hasAccount: "Already have an account?", backTo: "Back to", 
     getpwd: "Get Password", buyPoints: "Buy Points", watchBtn: "Click to Watch", waitBtn: "Wait for Schedule",
@@ -146,7 +146,7 @@ const TRANSLATIONS = {
   },
   mm: {
     loginBtn: "အကောင့်ဝင်ရန်", signUpBtn: "အကောင့်ဖွင့်ရန်", adminPanel: "Admin စာမျက်နှာ", logout: "အကောင့်မှထွက်ရန်", pts: "မှတ်",
-    latestReleases: "ဇာတ်ကားအမျိုးအစားများ", collection: "ဇာတ်ကားများ", episodes: "အပိုင်းများ", searchPlaceholder: "ဇာတ်ကားအမည် ရှာရန်...",
+    latestReleases: "နောက်ဆုံးတင်ထားသော ဇာတ်ကားများ", categoriesTab: "ဇာတ်ကားအမျိုးအစားများ", collection: "ဇာတ်ကားများ", episodes: "အပိုင်းများ", searchPlaceholder: "ဇာတ်ကားအမည် ရှာရန်...",
     home: "ပင်မစာမျက်နှာ", promotions: "ပရိုမိုးရှင်းများ", faq: "Point ဝယ်နည်း နှင့် အမေးအဖြေ", email: "အီးမေးလ် (သို့) Username", password: "စကားဝှက်", 
     forgotPwd: "စကားဝှက်မေ့နေပါသလား?", noAccount: "အကောင့်မရှိသေးဘူးလား?", hasAccount: "အကောင့်ရှိပြီးသားလား?", backTo: "နောက်သို့", 
     getpwd: "စကားဝှက်တောင်းမည်", buyPoints: "Point ဝယ်ယူရန်", watchBtn: "ဇာတ်ကားကြည့်ရန်နှိပ်ပါ", waitBtn: "အချိန်စောင့်ပါ",
@@ -298,6 +298,60 @@ export default function SweetieWorldApp() {
   const itemsPerPage = 10;
   // Category Cache (ဖုန်း Memory ထဲတွင် ၁၀ မိနစ်ကြာ သိမ်းထားပြီး အသွားအပြန် 0 Read ဖြစ်စေရန်)
   const categoryCacheRef = useRef<Record<string, { shows: VideoCardData[]; lastVisible: any; hasMore: boolean; timestamp: number }>>({});
+  // ဇာတ်ကားအသေးစိတ် Cache (Lite Card မှ နှိပ်ကြည့်ပြီးသားကားကို ၁၀ မိနစ်အတွင်း 0 Read ဖြစ်စေရန်)
+  const showDetailCacheRef = useRef<Record<string, { show: VideoCardData; timestamp: number }>>({});
+
+  const toLiteShow = (s: VideoCardData): VideoCardData => ({
+    id: s.id,
+    title_en: s.title_en || '',
+    title_mm: s.title_mm || '',
+    image: s.image || '',
+    category: s.category || 'All',
+    description: '',
+    totalEpisodes: s.totalEpisodes ?? 0,
+    pointsPerEp: s.pointsPerEp ?? 20,
+    episodes: [],
+    updatedAt: s.updatedAt || '',
+    isLite: true
+  });
+
+  const refreshLatestShowsDoc = async () => {
+    try {
+      const q = query(collection(db, "Shows"), orderBy("updatedAt", "desc"), limit(10));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const liteList = snap.docs.map(d => toLiteShow(d.data() as VideoCardData));
+        await setDoc(doc(db, "SiteData", "latestShows"), { data: liteList });
+        return liteList;
+      }
+    } catch (e) {
+      console.error("Refresh latestShows error:", e);
+    }
+    return null;
+  };
+
+  const handleSelectShow = async (item: VideoCardData) => {
+    if (!item.isLite) {
+      setSelectedShow(item);
+      return;
+    }
+    const cached = showDetailCacheRef.current[item.id];
+    if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000) {
+      setSelectedShow(cached.show);
+      return;
+    }
+    setSelectedShow(item);
+    try {
+      const snap = await getDoc(doc(db, "Shows", item.id));
+      if (snap.exists()) {
+        const fullShow = snap.data() as VideoCardData;
+        showDetailCacheRef.current[item.id] = { show: fullShow, timestamp: Date.now() };
+        setSelectedShow(prev => (prev && prev.id === item.id ? fullShow : prev));
+      }
+    } catch (error) {
+      console.error("Fetch show detail error:", error);
+    }
+  };
 
   // NEW: Admin Content Summary States (Upgraded for Edit)
   const [adminSummary, setAdminSummary] = useState<Record<string, {count: number, shows: VideoCardData[]}>>({});
@@ -825,7 +879,28 @@ export default function SweetieWorldApp() {
            return null;
         };
 
-        const [ loadedUsers ] = await Promise.all([
+        const fetchLatestLite = async () => {
+            const snap = await getDoc(doc(db, "SiteData", "latestShows"));
+            if (snap.exists() && snap.data().data && snap.data().data.length > 0) {
+                const liteList = snap.data().data as VideoCardData[];
+                const cursor = liteList[liteList.length - 1]?.updatedAt || null;
+                const hasMoreFlag = liteList.length === 10 && Boolean(cursor);
+                setShows(liteList);
+                setLastVisible(cursor);
+                setHasMore(hasMoreFlag);
+                categoryCacheRef.current['Latest Releases'] = {
+                    shows: liteList,
+                    lastVisible: cursor,
+                    hasMore: hasMoreFlag,
+                    timestamp: Date.now()
+                };
+                return true;
+            }
+            await fetchShows();
+            return false;
+        };
+
+        const [ loadedUsers, hasLatestLiteDoc ] = await Promise.all([
             (async () => { 
                const savedUser = localStorage.getItem('jbsehunjaes_auth');
                if(savedUser) {
@@ -834,6 +909,7 @@ export default function SweetieWorldApp() {
                }
                setUsers([]); return []; 
             })(),
+            fetchLatestLite(),
             fetchConfig(),
             fetchDoc("categories", setCategories, INITIAL_CATEGORIES),
             fetchDoc("platforms", setPlatforms, INITIAL_PLATFORMS),
@@ -862,7 +938,9 @@ export default function SweetieWorldApp() {
             setNotifications(loadedNotis);
             if (!uSnap.empty) setUsers(uSnap.docs.map(d => d.data() as UserData));
             setTotalUsersCount(countSnap.data().count);
-           await fetchShows();
+            if (!hasLatestLiteDoc) {
+                await refreshLatestShowsDoc();
+            }
             await fetchOrInitPointStats();
             lastSyncTime.current = Date.now();
         }
@@ -948,10 +1026,10 @@ export default function SweetieWorldApp() {
     }
   };
 
-   // NEW: Search စာသားနှင့် Category Cache (0 Read) တွဲဖက်စနစ်
+   // NEW: Search စာသား၊ Lite Latest Releases (1 Read) နှင့် Category Cache (0 Read) တွဲဖက်စနစ်
   const fetchMovies = async (isLoadMore = false, cat = activeCategory, searchTxt = searchQuery) => {
     const safeSearch = searchTxt.toLowerCase().replace(/\s+/g, '');
-    if (safeSearch.length === 0 && cat === 'Latest Releases') return;
+    if (safeSearch.length === 0 && cat === 'Categories') return;
 
     const CACHE_TTL = 10 * 60 * 1000; // ၁၀ မိနစ်အတွင်း ပြန်ဝင်ပါက Cache မှ 0 Read ဖြင့် ချက်ချင်းပြမည်
     if (!isLoadMore && safeSearch.length === 0) {
@@ -967,6 +1045,21 @@ export default function SweetieWorldApp() {
     if (isLoadMore && (!lastVisible || !hasMore)) return;
     setLoadingMore(true);
     try {
+        // Latest Releases ပထမစာမျက်နှာကို Lite Document (1 Read / ~2.5 KB) မှ ဆွဲပြမည်
+        if (!isLoadMore && safeSearch.length === 0 && cat === 'Latest Releases') {
+            const liteSnap = await getDoc(doc(db, "SiteData", "latestShows"));
+            if (liteSnap.exists() && liteSnap.data().data && liteSnap.data().data.length > 0) {
+                const liteList = liteSnap.data().data as VideoCardData[];
+                const cursor = liteList[liteList.length - 1]?.updatedAt || null;
+                const hasMoreFlag = liteList.length === 10 && Boolean(cursor);
+                setShows(liteList);
+                setLastVisible(cursor);
+                setHasMore(hasMoreFlag);
+                categoryCacheRef.current[cat] = { shows: liteList, lastVisible: cursor, hasMore: hasMoreFlag, timestamp: Date.now() };
+                return;
+            }
+        }
+
         let baseQuery;
 
         if (safeSearch.length > 0) {
@@ -974,7 +1067,7 @@ export default function SweetieWorldApp() {
             baseQuery = query(collection(db, "Shows"), where("searchKeywords", "array-contains", safeSearch), orderBy("updatedAt", "desc"));
         } else {
             // Search မလုပ်ထားလျှင် ရိုးရိုး Category အတိုင်းပြမည်
-            if (cat === 'All') {
+            if (cat === 'All' || cat === 'Latest Releases') {
                 baseQuery = query(collection(db, "Shows"), orderBy("updatedAt", "desc"));
             } else {
                 baseQuery = query(collection(db, "Shows"), where("category", "==", cat), orderBy("updatedAt", "desc"));
@@ -1040,7 +1133,7 @@ export default function SweetieWorldApp() {
   useEffect(() => {
      if (isInitialLoad) return;
      setUiPage(1);
-     if (activeCategory === 'Latest Releases') return;
+     if (activeCategory === 'Categories') return;
      const cached = categoryCacheRef.current[activeCategory];
      if (!cached || Date.now() - cached.timestamp >= 10 * 60 * 1000) {
          setShows([]);
@@ -1053,7 +1146,7 @@ export default function SweetieWorldApp() {
      if (isInitialLoad) return;
      const timeoutId = setTimeout(() => {
          setUiPage(1);
-         if (!searchQuery.trim() && activeCategory === 'Latest Releases') return;
+         if (!searchQuery.trim() && activeCategory === 'Categories') return;
          fetchMovies(false, activeCategory, searchQuery);
      }, 800); 
      return () => clearTimeout(timeoutId);
@@ -1091,7 +1184,7 @@ export default function SweetieWorldApp() {
         const localShow = shows.find(s => s.id === showIdFromUrl);
         
         if (localShow) {
-          setSelectedShow(localShow);
+          handleSelectShow(localShow);
         } else {
           // ၂။ မပါခဲ့ရင် (အဟောင်းကားဖြစ်နေရင်) Database ကနေ အဲ့ဒီ (၁) ကားတည်းကို သီးသန့် လှမ်းဆွဲမည်
           try {
@@ -2233,7 +2326,8 @@ export default function SweetieWorldApp() {
                 <button onClick={() => setAdminActiveTab('upload')} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'upload' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
                   <Upload className="w-5 h-5"/> {t.adminTabUpload}
                 </button>
-                <button onClick={() => {syncLatestData(); setAdminActiveTab('uploaded_content'); if (shows.length === 0) fetchMovies(false, 'All', '');}} className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'uploaded_content' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
+                <button onClick={() => {syncLatestData(); setAdminActiveTab('uploaded_content'); if (shows.length === 0 || shows.some(s => s.isLite)) fetchMovies(false, 'All', '');}} 
+		className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-sm font-black transition-all duration-200 ${adminActiveTab === 'uploaded_content' ? 'bg-[#ff9d9d] text-[#3e1717] shadow-[0_4px_0_#cc7a7a] active:shadow-none active:translate-y-1' : 'bg-[#2a1414] text-zinc-300 border border-[#4a2626] shadow-[0_4px_0_#1a0c0c] hover:bg-[#3e1d1d] hover:text-[#ff9d9d] active:shadow-none active:translate-y-1 active:bg-[#4a2626]'}`}>
                   <ListVideo className="w-5 h-5"/> {lang === 'en' ? 'Uploaded Content' : 'တင်ထားသော ဇာတ်ကားများ'}
                 </button>
              </nav>
@@ -3678,6 +3772,8 @@ export default function SweetieWorldApp() {
     // 🌟 အထုပ်လိုက် မသိမ်းတော့ဘဲ သက်ဆိုင်ရာ ဇာတ်ကား Document တစ်ခုတည်းကိုသာ Shows Collection ထဲ သိမ်းမည်
     await setDoc(doc(db, "Shows", itemToSave.id), itemToSave);
     categoryCacheRef.current = {};
+    showDetailCacheRef.current = {};
+    await refreshLatestShowsDoc();
 
     if (editingShowId) {
       const updatedShows = [itemToSave, ...shows.filter(s => s.id !== editingShowId)];
@@ -3817,9 +3913,11 @@ export default function SweetieWorldApp() {
     message: t.confirmDelDesc,
     onConfirm: () => { 
         // 🌟 Firebase Database အစစ်ပေါ်မှ အပြီးတိုင်ဖျက်ပစ်မည်
-        deleteDoc(doc(db, "Shows", s.id)).then(() => {
+        deleteDoc(doc(db, "Shows", s.id)).then(async () => {
             setShows(shows.filter(x => x.id !== s.id)); 
             categoryCacheRef.current = {};
+            showDetailCacheRef.current = {};
+            await refreshLatestShowsDoc();
         });
         showToast(t.msgDeleted); 
     }
@@ -3871,14 +3969,24 @@ export default function SweetieWorldApp() {
 	<div className="w-full px-4 mt-5 font-sans">
             <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar py-3">
               
-              {/* Latest Releases ခလုတ် (ပထမဆုံး နေရာတွင်ထားမည်) */}
-              <button onClick={() => { setActiveCategory('Latest Releases'); setUiPage(1); }}
+              {/* 1. Latest Releases ခလုတ် (ပထမဆုံး နေရာ) */}
+              <button onClick={() => { setActiveCategory('Latest Releases'); setSearchQuery(''); setUiPage(1); }}
                 className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-black tracking-wide transition-all duration-150 border-t border-x active:translate-y-[3px] ${
                   activeCategory === 'Latest Releases'
                     ? 'bg-gradient-to-b from-[#7f1d1d] via-[#4a1010] to-[#260606] text-[#fcd385] border-[#fcd385]/80 shadow-[0_4px_0_#1a0303,0_6px_14px_rgba(252,211,133,0.28),inset_0_1px_1px_rgba(255,255,255,0.35)] active:shadow-[0_1px_0_#1a0303]'
                     : 'bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-zinc-600/40 hover:text-white hover:border-zinc-500/70 shadow-[0_4px_0_#09090b,0_5px_10px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.16)] active:shadow-[0_1px_0_#09090b]'
                 }`}>
                 {t.latestReleases}
+              </button>
+
+              {/* 2. Categories 5D ပုံကတ်များ ခလုတ် (ဒုတိယ နေရာ) */}
+              <button onClick={() => { setActiveCategory('Categories'); setSearchQuery(''); setUiPage(1); }}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-black tracking-wide transition-all duration-150 border-t border-x active:translate-y-[3px] ${
+                  activeCategory === 'Categories'
+                    ? 'bg-gradient-to-b from-[#7f1d1d] via-[#4a1010] to-[#260606] text-[#fcd385] border-[#fcd385]/80 shadow-[0_4px_0_#1a0303,0_6px_14px_rgba(252,211,133,0.28),inset_0_1px_1px_rgba(255,255,255,0.35)] active:shadow-[0_1px_0_#1a0303]'
+                    : 'bg-gradient-to-b from-[#2b2b2e] via-[#1c1c1f] to-[#121214] text-zinc-300 border-zinc-600/40 hover:text-white hover:border-zinc-500/70 shadow-[0_4px_0_#09090b,0_5px_10px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.16)] active:shadow-[0_1px_0_#09090b]'
+                }`}>
+                {t.categoriesTab}
               </button>
 
               {/* ကျန်တဲ့ Category အခြားခလုတ်များ */}
@@ -3897,7 +4005,7 @@ export default function SweetieWorldApp() {
           </div>
 
 	<main className="w-full px-4 mt-6 pb-12 font-sans">
-            {activeCategory === 'Latest Releases' && !searchQuery.trim() ? (
+            {activeCategory === 'Categories' && !searchQuery.trim() ? (
               /* 5D CATEGORY CARDS GRID (0 Firebase Reads) */
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 lg:gap-5">
                 {categories.filter(c => c !== 'All').length === 0 ? (
@@ -3970,7 +4078,7 @@ export default function SweetieWorldApp() {
                     }
 
                     return paginatedGridShows.map(item => (
-                      <div key={item.id} onClick={() => setSelectedShow(item)} className="bg-gradient-to-b from-[#291a1a] via-[#1a1313] to-[#0f0a0a] border-t border-x border-[#fcd385]/25 rounded-2xl overflow-hidden cursor-pointer group hover:-translate-y-1.5 hover:border-[#fcd385]/75 shadow-[0_8px_0_#080505,0_14px_24px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_12px_0_#1a0909,0_20px_35px_rgba(252,211,133,0.22),inset_0_1px_2px_rgba(255,255,255,0.35)] active:translate-y-[4px] active:shadow-[0_2px_0_#080505,inset_0_2px_6px_rgba(0,0,0,0.8)] transition-all duration-200 flex flex-col">
+                      <div key={item.id} onClick={() => handleSelectShow(item)} className="bg-gradient-to-b from-[#291a1a] via-[#1a1313] to-[#0f0a0a] border-t border-x border-[#fcd385]/25 rounded-2xl overflow-hidden cursor-pointer group hover:-translate-y-1.5 hover:border-[#fcd385]/75 shadow-[0_8px_0_#080505,0_14px_24px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_12px_0_#1a0909,0_20px_35px_rgba(252,211,133,0.22),inset_0_1px_2px_rgba(255,255,255,0.35)] active:translate-y-[4px] active:shadow-[0_2px_0_#080505,inset_0_2px_6px_rgba(0,0,0,0.8)] transition-all duration-200 flex flex-col">
                         <div className="m-1.5 aspect-[3/4] md:aspect-[4/5] relative overflow-hidden bg-black rounded-xl border border-white/10 shadow-[inset_0_2px_10px_rgba(0,0,0,0.9)]">
                           <img src={item.image} alt={item.title_en} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                           {/* 5D မှန်သားအလင်းပြန်အလွှာ */}
@@ -4190,6 +4298,12 @@ export default function SweetieWorldApp() {
               <div className="p-5 flex-1 overflow-y-auto custom-scrollbar flex flex-col">
                  <p className="text-sm text-zinc-300 mb-6">{selectedShow.description}</p>
                  <h3 className="text-lg font-bold text-white mb-4 border-l-4 border-[#fcd385] pl-3">{t.episodes}</h3>
+                 {selectedShow.isLite && (
+                   <div className="py-10 flex flex-col items-center justify-center text-[#fcd385] gap-2">
+                     <RefreshCw className="w-6 h-6 animate-spin" />
+                     <span className="text-xs font-bold tracking-wider">Loading...</span>
+                   </div>
+                 )}
                  
                  {/* RECREATED EXACT EPISODE GRID FROM SCREENSHOT */}
 			<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -4270,7 +4384,7 @@ export default function SweetieWorldApp() {
                  </div>
 
                  {/* VIP BANNER SECTION FROM SCREENSHOT */}
-                 {selectedShow.seriesType !== 'mini' && (
+                 {selectedShow.seriesType !== 'mini' && !selectedShow.isLite && (
                  <div className="mt-8 pt-6 border-t border-zinc-800">
                     {selectedShow.totalEpisodes === 0 ? (
                        <div className="p-4 rounded-xl border border-zinc-800 bg-black/50 text-center shadow-inner">
